@@ -1,10 +1,10 @@
 use std::{
-    fs::{File, OpenOptions},
+    fs::{File, OpenOptions, self},
     os::{
         fd::AsRawFd,
         unix::{io::{AsFd, BorrowedFd, OwnedFd}, fs::OpenOptionsExt}
     },
-    path::Path,
+    path::{Path, PathBuf},
     collections::HashMap
 };
 use cairo::{
@@ -46,7 +46,7 @@ impl ControlDevice for Card {}
 impl DrmDevice for Card {}
 
 impl Card {
-    fn open(path: &str) -> Self {
+    fn open(path: PathBuf) -> Self {
         let mut options = OpenOptions::new();
         options.read(true);
         options.write(true);
@@ -112,7 +112,7 @@ fn find_prop_id<T: ResourceHandle>(
 ) -> Result<property::Handle> {
     let props = card.get_properties(handle)?;
     for id in props.as_props_and_values().0 {
-        let info = card.get_property(*id).unwrap();
+        let info = card.get_property(*id)?;
         if info.name().to_str()? == name {
             return Ok(*id);
         }
@@ -120,14 +120,14 @@ fn find_prop_id<T: ResourceHandle>(
     return Err(anyhow!("Property not found"));
 }
 
-fn try_open_card(path: &str) -> Result<DrmBackend> {
+fn try_open_card(path: PathBuf) -> Result<DrmBackend> {
     let card = Card::open(path);
-    card.set_client_capability(ClientCapability::UniversalPlanes, true).unwrap();
-    card.set_client_capability(ClientCapability::Atomic, true).unwrap();
-    card.acquire_master_lock().unwrap();
+    card.set_client_capability(ClientCapability::UniversalPlanes, true)?;
+    card.set_client_capability(ClientCapability::Atomic, true)?;
+    card.acquire_master_lock()?;
 
 
-    let res = card.resource_handles().unwrap();
+    let res = card.resource_handles()?;
     let coninfo = res
         .connectors()
         .iter()
@@ -142,93 +142,107 @@ fn try_open_card(path: &str) -> Result<DrmBackend> {
     let con = coninfo
         .iter()
         .find(|&i| i.state() == connector::State::Connected)
-        .ok_or(anyhow!("No connected connectors found")).unwrap();
+        .ok_or(anyhow!("No connected connectors found"))?;
 
-    let &mode = con.modes().get(0).ok_or(anyhow!("No modes found")).unwrap();
+    let &mode = con.modes().get(0).ok_or(anyhow!("No modes found"))?;
     let (disp_width, disp_height) = mode.size();
     if disp_height / disp_width < 30 {
         return Err(anyhow!("This does not look like a touchbar"));
     }
-    let crtc = crtcinfo.get(0).ok_or(anyhow!("No crtcs found")).unwrap();
+    let crtc = crtcinfo.get(0).ok_or(anyhow!("No crtcs found"))?;
     let fmt = DrmFourcc::Xrgb8888;
-    let db = card.create_dumb_buffer((64, disp_height.into()), fmt, 32).unwrap();
+    let db = card.create_dumb_buffer((64, disp_height.into()), fmt, 32)?;
 
-    let fb = card.add_framebuffer(&db, 24, 32).unwrap();
-    let plane = *card.plane_handles().unwrap().get(0).ok_or(anyhow!("No planes found")).unwrap();
+    let fb = card.add_framebuffer(&db, 24, 32)?;
+    let plane = *card.plane_handles()?.get(0).ok_or(anyhow!("No planes found"))?;
 
     let mut atomic_req = atomic::AtomicModeReq::new();
     atomic_req.add_property(
         con.handle(),
-        find_prop_id(&card, con.handle(), "CRTC_ID").unwrap(),
+        find_prop_id(&card, con.handle(), "CRTC_ID")?,
         property::Value::CRTC(Some(crtc.handle())),
     );
-    let blob = card.create_property_blob(&mode).unwrap();
+    let blob = card.create_property_blob(&mode)?;
 
     atomic_req.add_property(
         crtc.handle(),
-        find_prop_id(&card, crtc.handle(), "MODE_ID").unwrap(),
+        find_prop_id(&card, crtc.handle(), "MODE_ID")?,
         blob,
     );
     atomic_req.add_property(
         crtc.handle(),
-        find_prop_id(&card, crtc.handle(), "ACTIVE").unwrap(),
+        find_prop_id(&card, crtc.handle(), "ACTIVE")?,
         property::Value::Boolean(true),
     );
     atomic_req.add_property(
         plane,
-        find_prop_id(&card, plane, "FB_ID").unwrap(),
+        find_prop_id(&card, plane, "FB_ID")?,
         property::Value::Framebuffer(Some(fb)),
     );
     atomic_req.add_property(
         plane,
-        find_prop_id(&card, plane, "CRTC_ID").unwrap(),
+        find_prop_id(&card, plane, "CRTC_ID")?,
         property::Value::CRTC(Some(crtc.handle())),
     );
     atomic_req.add_property(
         plane,
-        find_prop_id(&card, plane, "SRC_X").unwrap(),
+        find_prop_id(&card, plane, "SRC_X")?,
         property::Value::UnsignedRange(0),
     );
     atomic_req.add_property(
         plane,
-        find_prop_id(&card, plane, "SRC_Y").unwrap(),
+        find_prop_id(&card, plane, "SRC_Y")?,
         property::Value::UnsignedRange(0),
     );
     atomic_req.add_property(
         plane,
-        find_prop_id(&card, plane, "SRC_W").unwrap(),
+        find_prop_id(&card, plane, "SRC_W")?,
         property::Value::UnsignedRange((mode.size().0 as u64) << 16),
     );
     atomic_req.add_property(
         plane,
-        find_prop_id(&card, plane, "SRC_H").unwrap(),
+        find_prop_id(&card, plane, "SRC_H")?,
         property::Value::UnsignedRange((mode.size().1 as u64) << 16),
     );
     atomic_req.add_property(
         plane,
-        find_prop_id(&card, plane, "CRTC_X").unwrap(),
+        find_prop_id(&card, plane, "CRTC_X")?,
         property::Value::SignedRange(0),
     );
     atomic_req.add_property(
         plane,
-        find_prop_id(&card, plane, "CRTC_Y").unwrap(),
+        find_prop_id(&card, plane, "CRTC_Y")?,
         property::Value::SignedRange(0),
     );
     atomic_req.add_property(
         plane,
-        find_prop_id(&card, plane, "CRTC_W").unwrap(),
+        find_prop_id(&card, plane, "CRTC_W")?,
         property::Value::UnsignedRange(mode.size().0 as u64),
     );
     atomic_req.add_property(
         plane,
-        find_prop_id(&card, plane, "CRTC_H").unwrap(),
+        find_prop_id(&card, plane, "CRTC_H")?,
         property::Value::UnsignedRange(mode.size().1 as u64),
     );
 
-    card.atomic_commit(AtomicCommitFlags::ALLOW_MODESET, atomic_req).unwrap();
+    card.atomic_commit(AtomicCommitFlags::ALLOW_MODESET, atomic_req)?;
 
 
     Ok(DrmBackend { card, db, fb })
+}
+
+fn open_card() -> Result<DrmBackend> {
+    for entry in fs::read_dir("/dev/dri/").unwrap() {
+        let entry = entry.unwrap();
+        if !entry.file_name().to_string_lossy().starts_with("card") {
+            continue
+        }
+        match try_open_card(entry.path()) {
+            Ok(card) => return Ok(card),
+            Err(_) => {}
+        }
+    }
+    Err(anyhow!("No touchbar device found"))
 }
 
 
@@ -292,7 +306,7 @@ fn main() {
     };
     let mut button_state = vec![false; 12];
     let mut needs_redraw = true;
-    let mut drm = try_open_card("/dev/dri/card0").unwrap();
+    let mut drm = open_card().unwrap();
     let mut input = Libinput::new_with_udev(Interface);
     input.udev_assign_seat("seat0").unwrap();
     let mut uinput = UInputHandle::new(OpenOptions::new().write(true).open("/dev/uinput").unwrap());
