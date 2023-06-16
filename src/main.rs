@@ -5,7 +5,9 @@ use std::{
         unix::{io::{AsFd, BorrowedFd, OwnedFd}, fs::OpenOptionsExt}
     },
     path::{Path, PathBuf},
-    collections::HashMap
+    collections::HashMap,
+    time::Instant,
+    io::Write
 };
 use cairo::{
     ImageSurface, Format, Context, Surface,
@@ -48,7 +50,7 @@ impl ControlDevice for Card {}
 impl DrmDevice for Card {}
 
 impl Card {
-    fn open(path: PathBuf) -> Self {
+    fn open(path: &Path) -> Self {
         let mut options = OpenOptions::new();
         options.read(true);
         options.write(true);
@@ -80,7 +82,7 @@ struct FunctionLayer {
 }
 
 impl FunctionLayer {
-    fn draw(&self, surface: &Surface, active_buttons: &[bool], dim: f64) {
+    fn draw(&self, surface: &Surface, active_buttons: &[bool]) {
         let c = Context::new(&surface).unwrap();
         c.translate(DFR_HEIGHT as f64, 0.0);
         c.rotate((90.0f64).to_radians());
@@ -92,11 +94,11 @@ impl FunctionLayer {
         c.set_font_size(24.0);
         for (i, button) in self.buttons.iter().enumerate() {
             let left_edge = i as f64 * (button_width + spacing_width) + spacing_width;
-            let color = (if active_buttons[i] { BUTTON_COLOR_ACTIVE } else { BUTTON_COLOR_INACTIVE }) * dim;
+            let color = if active_buttons[i] { BUTTON_COLOR_ACTIVE } else { BUTTON_COLOR_INACTIVE };
             c.set_source_rgb(color, color, color);
             c.rectangle(left_edge, 0.09 * DFR_HEIGHT as f64, button_width, 0.82 * DFR_HEIGHT as f64);
             c.fill().unwrap();
-            c.set_source_rgb(dim, dim, dim);
+            c.set_source_rgb(1.0, 1.0, 1.0);
             let extents = c.text_extents(&button.text).unwrap();
             c.move_to(
                 left_edge + button_width / 2.0 - extents.width() / 2.0,
@@ -122,7 +124,7 @@ fn find_prop_id<T: ResourceHandle>(
     return Err(anyhow!("Property not found"));
 }
 
-fn try_open_card(path: PathBuf) -> Result<DrmBackend> {
+fn try_open_card(path: &Path) -> Result<DrmBackend> {
     let card = Card::open(path);
     card.set_client_capability(ClientCapability::UniversalPlanes, true)?;
     card.set_client_capability(ClientCapability::Atomic, true)?;
@@ -234,12 +236,12 @@ fn try_open_card(path: PathBuf) -> Result<DrmBackend> {
 }
 
 fn open_card() -> Result<DrmBackend> {
-    for entry in fs::read_dir("/dev/dri/").unwrap() {
-        let entry = entry.unwrap();
+    for entry in fs::read_dir("/dev/dri/")? {
+        let entry = entry?;
         if !entry.file_name().to_string_lossy().starts_with("card") {
             continue
         }
-        match try_open_card(entry.path()) {
+        match try_open_card(&entry.path()) {
             Ok(card) => return Ok(card),
             Err(_) => {}
         }
@@ -247,6 +249,22 @@ fn open_card() -> Result<DrmBackend> {
     Err(anyhow!("No touchbar device found"))
 }
 
+fn find_backlight() -> Result<PathBuf> {
+    for entry in fs::read_dir("/sys/class/backlight/")? {
+        let entry = entry?;
+        if entry.file_name().to_string_lossy().contains("display-pipe") {
+            let mut path = entry.path();
+            path.push("brightness");
+            return Ok(path);
+        }
+    }
+    Err(anyhow!("No backlight device found"))
+}
+
+fn set_backlight(path: &Path, value: u32) {
+    let mut file = OpenOptions::new().write(true).open(path).unwrap();
+    file.write(format!("{}\n", value).as_bytes()).unwrap();
+}
 
 struct Interface;
 
@@ -309,6 +327,7 @@ fn main() {
     let mut button_state = vec![false; 12];
     let mut needs_redraw = true;
     let mut drm = open_card().unwrap();
+    let bl_path = find_backlight().unwrap();
     let mut input = Libinput::new_with_udev(Interface);
     input.udev_assign_seat("seat0").unwrap();
     let pollfd = PollFd::new(input.as_raw_fd(), PollFlags::POLLIN);
@@ -338,10 +357,12 @@ fn main() {
     uinput.dev_create().unwrap();
     let mut digitizer: Option<InputDevice> = None;
     let mut touches = HashMap::new();
+    let mut last_active = Instant::now();
+    let mut current_bl = 42;
     loop {
         if needs_redraw {
             needs_redraw = false;
-            layer.draw(&surface, &button_state, 1.0);
+            layer.draw(&surface, &button_state);
             let mut map = drm.card.map_dumb_buffer(&mut drm.db).unwrap();
             let data = surface.data().unwrap();
             map.as_mut()[..data.len()].copy_from_slice(&data);
@@ -358,6 +379,7 @@ fn main() {
                     }
                 },
                 Event::Touch(te) => {
+                    last_active = Instant::now();
                     if Some(te.device()) != digitizer {
                         continue
                     }
@@ -405,10 +427,23 @@ fn main() {
                         _ => {}
                     }
                 },
+                Event::Keyboard(_) | Event::Pointer(_) => {
+                    last_active = Instant::now();
+                }
                 _ => {}
             }
         }
+        let since_last_active = (Instant::now() - last_active).as_millis() as u64;
+        let new_bl = if since_last_active < TIMEOUT_MS as u64 {
+            128
+        } else if since_last_active < TIMEOUT_MS as u64 * 2 {
+            1
+        } else {
+            0
+        };
+        if current_bl != new_bl {
+            current_bl = new_bl;
+            set_backlight(&bl_path, current_bl);
+        }
     }
-
-
 }
