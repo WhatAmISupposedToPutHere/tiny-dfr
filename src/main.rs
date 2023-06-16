@@ -29,11 +29,13 @@ use input::{
 use libc::{O_RDONLY, O_RDWR, O_WRONLY};
 use input_linux::{uinput::UInputHandle, EventKind, Key, SynchronizeKind};
 use input_linux_sys::{uinput_setup, input_id, timeval, input_event};
+use nix::poll::{poll, PollFd, PollFlags};
 
 const DFR_WIDTH: i32 = 2008;
 const DFR_HEIGHT: i32 = 64;
 const BUTTON_COLOR_INACTIVE: f64 = 0.267;
 const BUTTON_COLOR_ACTIVE: f64 = 0.567;
+const TIMEOUT_MS: i32 = 30 * 1000;
 
 struct Card(File);
 impl AsFd for Card {
@@ -309,6 +311,7 @@ fn main() {
     let mut drm = open_card().unwrap();
     let mut input = Libinput::new_with_udev(Interface);
     input.udev_assign_seat("seat0").unwrap();
+    let pollfd = PollFd::new(input.as_raw_fd(), PollFlags::POLLIN);
     let mut uinput = UInputHandle::new(OpenOptions::new().write(true).open("/dev/uinput").unwrap());
     uinput.set_evbit(EventKind::Key).unwrap();
     for button in &layer.buttons {
@@ -344,6 +347,7 @@ fn main() {
             map.as_mut()[..data.len()].copy_from_slice(&data);
             drm.card.dirty_framebuffer(drm.fb, &[ClipRect{x1: 0, y1: 0, x2: DFR_HEIGHT as u16, y2: DFR_WIDTH as u16}]).unwrap();
         }
+        poll(&mut [pollfd], TIMEOUT_MS).unwrap();
         input.dispatch().unwrap();
         for event in &mut input {
             match event {

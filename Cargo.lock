@@ -565,6 +565,7 @@ dependencies = [
  "input-linux",
  "input-linux-sys",
  "libc",
+ "nix",
 ]
 
 [[package]]
