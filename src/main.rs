@@ -365,9 +365,12 @@ fn main() {
     let mut needs_redraw = true;
     let mut drm = open_card().unwrap();
     let bl_path = find_backlight().unwrap();
-    let mut input = Libinput::new_with_udev(Interface);
-    input.udev_assign_seat("seat0").unwrap();
-    let pollfd = PollFd::new(input.as_raw_fd(), PollFlags::POLLIN);
+    let mut input_tb = Libinput::new_with_udev(Interface);
+    let mut input_main = Libinput::new_with_udev(Interface);
+    input_tb.udev_assign_seat("seat-touchbar").unwrap();
+    input_main.udev_assign_seat("seat0").unwrap();
+    let pollfd_tb = PollFd::new(input_tb.as_raw_fd(), PollFlags::POLLIN);
+    let pollfd_main = PollFd::new(input_main.as_raw_fd(), PollFlags::POLLIN);
     let mut uinput = UInputHandle::new(OpenOptions::new().write(true).open("/dev/uinput").unwrap());
     uinput.set_evbit(EventKind::Key).unwrap();
     for button in &layer.buttons {
@@ -406,9 +409,10 @@ fn main() {
             map.as_mut()[..data.len()].copy_from_slice(&data);
             drm.card.dirty_framebuffer(drm.fb, &[ClipRect{x1: 0, y1: 0, x2: DFR_HEIGHT as u16, y2: DFR_WIDTH as u16}]).unwrap();
         }
-        poll(&mut [pollfd], TIMEOUT_MS).unwrap();
-        input.dispatch().unwrap();
-        for event in &mut input {
+        poll(&mut [pollfd_tb, pollfd_main], TIMEOUT_MS).unwrap();
+        input_tb.dispatch().unwrap();
+        input_main.dispatch().unwrap();
+        for event in &mut input_tb.clone().chain(input_main.clone()) {
             match event {
                 Event::Device(DeviceEvent::Added(evt)) => {
                     let dev = evt.device();
