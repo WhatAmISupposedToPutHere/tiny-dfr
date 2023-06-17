@@ -89,6 +89,9 @@ impl FunctionLayer {
         c.rotate((90.0f64).to_radians());
         let button_width = DFR_WIDTH as f64 / (self.buttons.len() + 1) as f64;
         let spacing_width = (DFR_WIDTH as f64 - self.buttons.len() as f64 * button_width) / (self.buttons.len() + 1) as f64;
+        let radius = 8.0f64;
+        let bot = 0.09 * DFR_HEIGHT as f64 + radius;
+        let top = bot + 0.82 * DFR_HEIGHT as f64 - 2.0 * radius;
         c.set_source_rgb(0.0, 0.0, 0.0);
         c.paint().unwrap();
         c.select_font_face("sans-serif", FontSlant::Normal, FontWeight::Normal);
@@ -97,7 +100,40 @@ impl FunctionLayer {
             let left_edge = i as f64 * (button_width + spacing_width) + spacing_width;
             let color = if active_buttons[i] { BUTTON_COLOR_ACTIVE } else { BUTTON_COLOR_INACTIVE };
             c.set_source_rgb(color, color, color);
-            c.rectangle(left_edge, 0.09 * DFR_HEIGHT as f64, button_width, 0.82 * DFR_HEIGHT as f64);
+            // draw box with rounded corners
+            c.new_sub_path();
+            let left = left_edge + radius;
+            let right = left_edge + button_width - radius;
+            c.arc(
+                right,
+                bot,
+                radius,
+                (-90.0f64).to_radians(),
+                (0.0f64).to_radians(),
+            );
+            c.arc(
+                right,
+                top,
+                radius,
+                (0.0f64).to_radians(),
+                (90.0f64).to_radians(),
+            );
+            c.arc(
+                left,
+                top,
+                radius,
+                (90.0f64).to_radians(),
+                (180.0f64).to_radians(),
+            );
+            c.arc(
+                left,
+                bot,
+                radius,
+                (180.0f64).to_radians(),
+                (270.0f64).to_radians(),
+            );
+            c.close_path();
+
             c.fill().unwrap();
             c.set_source_rgb(1.0, 1.0, 1.0);
             let extents = c.text_extents(&button.text).unwrap();
