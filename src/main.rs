@@ -91,7 +91,7 @@ impl FunctionLayer {
         c.set_source_rgb(0.0, 0.0, 0.0);
         c.paint().unwrap();
         c.select_font_face("sans-serif", FontSlant::Normal, FontWeight::Normal);
-        c.set_font_size(24.0);
+        c.set_font_size(32.0);
         for (i, button) in self.buttons.iter().enumerate() {
             let left_edge = i as f64 * (button_width + spacing_width) + spacing_width;
             let color = if active_buttons[i] { BUTTON_COLOR_ACTIVE } else { BUTTON_COLOR_INACTIVE };
