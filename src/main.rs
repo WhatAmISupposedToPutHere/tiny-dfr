@@ -374,7 +374,7 @@ fn main() {
             match event {
                 Event::Device(DeviceEvent::Added(evt)) => {
                     let dev = evt.device();
-                    if dev.name().contains("MacBookPro17,1 Touch Bar") {
+                    if dev.name().contains(" Touch Bar") {
                         digitizer = Some(dev);
                     }
                 },
