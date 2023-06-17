@@ -25,6 +25,7 @@ use input::{
     Libinput, LibinputInterface, Device as InputDevice,
     event::{
         Event, device::DeviceEvent, EventTrait,
+        switch::{Switch, SwitchEvent, SwitchState},
         touch::{TouchEvent, TouchEventPosition, TouchEventSlot}
     }
 };
@@ -358,6 +359,7 @@ fn main() {
     let mut digitizer: Option<InputDevice> = None;
     let mut touches = HashMap::new();
     let mut last_active = Instant::now();
+    let mut lid_state = SwitchState::Off;
     let mut current_bl = 42;
     loop {
         if needs_redraw {
@@ -429,12 +431,31 @@ fn main() {
                 },
                 Event::Keyboard(_) | Event::Pointer(_) => {
                     last_active = Instant::now();
+                },
+                Event::Switch(se) => {
+                    match se {
+                        SwitchEvent::Toggle(toggle) => {
+                            match toggle.switch().unwrap() {
+                                Switch::Lid => {
+                                    lid_state = toggle.switch_state();
+                                    println!("Lid Switch event: {}", format!("{lid_state:?}"));
+                                    if toggle.switch_state() == SwitchState::Off {
+                                        last_active = Instant::now();
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                        _ => {}
+                    }
                 }
                 _ => {}
             }
         }
         let since_last_active = (Instant::now() - last_active).as_millis() as u64;
-        let new_bl = if since_last_active < TIMEOUT_MS as u64 {
+        let new_bl = if lid_state == SwitchState::On {
+            0
+        } else if since_last_active < TIMEOUT_MS as u64 {
             128
         } else if since_last_active < TIMEOUT_MS as u64 * 2 {
             1
