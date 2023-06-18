@@ -17,7 +17,8 @@ use input::{
     Libinput, LibinputInterface, Device as InputDevice,
     event::{
         Event, device::DeviceEvent, EventTrait,
-        touch::{TouchEvent, TouchEventPosition, TouchEventSlot}
+        touch::{TouchEvent, TouchEventPosition, TouchEventSlot},
+        keyboard::{KeyboardEvent, KeyboardEventTrait, KeyState}
     }
 };
 use libc::{O_RDONLY, O_RDWR, O_WRONLY};
@@ -151,25 +152,49 @@ fn emit<F>(uinput: &mut UInputHandle<F>, ty: EventKind, code: u16, value: i32) w
     }]).unwrap();
 }
 
+fn toggle_key<F>(uinput: &mut UInputHandle<F>, code: Key, value: i32) where F: AsRawFd {
+    emit(uinput, EventKind::Key, code as u16, value);
+    emit(uinput, EventKind::Synchronize, SynchronizeKind::Report as u16, 0);
+}
+
 fn main() {
     let mut surface = ImageSurface::create(Format::ARgb32, DFR_HEIGHT, DFR_WIDTH).unwrap();
-    let layer = FunctionLayer {
-        buttons: vec![
-            Button { text: "F1".to_string(), action: Key::F1 },
-            Button { text: "F2".to_string(), action: Key::F2 },
-            Button { text: "F3".to_string(), action: Key::F3 },
-            Button { text: "F4".to_string(), action: Key::F4 },
-            Button { text: "F5".to_string(), action: Key::F5 },
-            Button { text: "F6".to_string(), action: Key::F6 },
-            Button { text: "F7".to_string(), action: Key::F7 },
-            Button { text: "F8".to_string(), action: Key::F8 },
-            Button { text: "F9".to_string(), action: Key::F9 },
-            Button { text: "F10".to_string(), action: Key::F10 },
-            Button { text: "F11".to_string(), action: Key::F11 },
-            Button { text: "F12".to_string(), action: Key::F12 }
-        ]
-    };
-    let mut button_state = vec![false; 12];
+    let mut active_layer = 0;
+    let layers = [
+        FunctionLayer {
+            buttons: vec![
+                Button { text: "F1".to_string(), action: Key::F1 },
+                Button { text: "F2".to_string(), action: Key::F2 },
+                Button { text: "F3".to_string(), action: Key::F3 },
+                Button { text: "F4".to_string(), action: Key::F4 },
+                Button { text: "F5".to_string(), action: Key::F5 },
+                Button { text: "F6".to_string(), action: Key::F6 },
+                Button { text: "F7".to_string(), action: Key::F7 },
+                Button { text: "F8".to_string(), action: Key::F8 },
+                Button { text: "F9".to_string(), action: Key::F9 },
+                Button { text: "F10".to_string(), action: Key::F10 },
+                Button { text: "F11".to_string(), action: Key::F11 },
+                Button { text: "F12".to_string(), action: Key::F12 }
+            ]
+        },
+        FunctionLayer {
+            buttons: vec![
+                Button { text: "B-Dn".to_string(), action: Key::BrightnessDown },
+                Button { text: "B-Up".to_string(), action: Key::BrightnessUp },
+                Button { text: "Mic0".to_string(), action: Key::MicMute },
+                Button { text: "Srch".to_string(), action: Key::Search },
+                Button { text: "BlDn".to_string(), action: Key::IllumDown },
+                Button { text: "BlUp".to_string(), action: Key::IllumUp },
+                Button { text: "Revd".to_string(), action: Key::PreviousSong },
+                Button { text: "Paus".to_string(), action: Key::PlayPause },
+                Button { text: "Fwrd".to_string(), action: Key::NextSong },
+                Button { text: "Mute".to_string(), action: Key::Mute },
+                Button { text: "VolD".to_string(), action: Key::VolumeDown },
+                Button { text: "VolU".to_string(), action: Key::VolumeUp }
+            ]
+        }
+    ];
+    let mut button_states = [vec![false; 12], vec![false; 12]];
     let mut needs_redraw = true;
     let mut drm = DrmBackend::open_card().unwrap();
     let mut input_tb = Libinput::new_with_udev(Interface);
@@ -180,8 +205,10 @@ fn main() {
     let pollfd_main = PollFd::new(input_main.as_raw_fd(), PollFlags::POLLIN);
     let mut uinput = UInputHandle::new(OpenOptions::new().write(true).open("/dev/uinput").unwrap());
     uinput.set_evbit(EventKind::Key).unwrap();
-    for button in &layer.buttons {
-        uinput.set_keybit(button.action).unwrap();
+    for layer in &layers {
+        for button in &layer.buttons {
+            uinput.set_keybit(button.action).unwrap();
+        }
     }
     uinput.dev_setup(&uinput_setup {
         id: input_id {
@@ -217,7 +244,7 @@ fn main() {
     loop {
         if needs_redraw {
             needs_redraw = false;
-            layer.draw(&surface, &button_state);
+            layers[active_layer].draw(&surface, &button_states[active_layer]);
             let data = surface.data().unwrap();
             drm.map().unwrap().as_mut()[..data.len()].copy_from_slice(&data);
             drm.dirty(&[ClipRect{x1: 0, y1: 0, x2: DFR_HEIGHT as u16, y2: DFR_WIDTH as u16}]).unwrap();
@@ -234,6 +261,18 @@ fn main() {
                         digitizer = Some(dev);
                     }
                 },
+                Event::Keyboard(KeyboardEvent::Key(key)) => {
+                    if key.key() == Key::Fn as u32 {
+                        let new_layer = match key.key_state() {
+                            KeyState::Pressed => 1,
+                            KeyState::Released => 0
+                        };
+                        if active_layer != new_layer {
+                            active_layer = new_layer;
+                            needs_redraw = true;
+                        }
+                    }
+                },
                 Event::Touch(te) => {
                     if Some(te.device()) != digitizer {
                         continue
@@ -242,13 +281,12 @@ fn main() {
                         TouchEvent::Down(dn) => {
                             let x = dn.x_transformed(DFR_WIDTH as u32);
                             let y = dn.y_transformed(DFR_HEIGHT as u32);
-                            let btn = (x / (DFR_WIDTH as f64 / layer.buttons.len() as f64)) as u32;
-                            if button_hit(layer.buttons.len() as u32, btn, x, y) {
-                                touches.insert(dn.seat_slot(), btn);
-                                button_state[btn as usize] = true;
+                            let btn = (x / (DFR_WIDTH as f64 / layers[active_layer].buttons.len() as f64)) as u32;
+                            if button_hit(layers[active_layer].buttons.len() as u32, btn, x, y) {
+                                touches.insert(dn.seat_slot(), (active_layer, btn));
+                                button_states[active_layer][btn as usize] = true;
                                 needs_redraw = true;
-                                emit(&mut uinput, EventKind::Key, layer.buttons[btn as usize].action as u16, 1);
-                                emit(&mut uinput, EventKind::Synchronize, SynchronizeKind::Report as u16, 0);
+                                toggle_key(&mut uinput, layers[active_layer].buttons[btn as usize].action, 1);
                             }
                         },
                         TouchEvent::Motion(mtn) => {
@@ -258,25 +296,23 @@ fn main() {
 
                             let x = mtn.x_transformed(DFR_WIDTH as u32);
                             let y = mtn.y_transformed(DFR_HEIGHT as u32);
-                            let btn = *touches.get(&mtn.seat_slot()).unwrap();
-                            let hit = button_hit(layer.buttons.len() as u32, btn, x, y);
-                            if button_state[btn as usize] != hit {
-                                button_state[btn as usize] = hit;
+                            let (layer, btn) = *touches.get(&mtn.seat_slot()).unwrap();
+                            let hit = button_hit(layers[layer].buttons.len() as u32, btn, x, y);
+                            if button_states[layer][btn as usize] != hit {
+                                button_states[layer][btn as usize] = hit;
                                 needs_redraw = true;
-                                emit(&mut uinput, EventKind::Key, layer.buttons[btn as usize].action as u16, hit as i32);
-                                emit(&mut uinput, EventKind::Synchronize, SynchronizeKind::Report as u16, 0);
+                                toggle_key(&mut uinput, layers[active_layer].buttons[btn as usize].action, hit as i32);
                             }
                         },
                         TouchEvent::Up(up) => {
                             if !touches.contains_key(&up.seat_slot()) {
                                 continue;
                             }
-                            let btn = *touches.get(&up.seat_slot()).unwrap() as usize;
-                            if button_state[btn] {
-                                button_state[btn] = false;
+                            let (layer, btn) = *touches.get(&up.seat_slot()).unwrap();
+                            if button_states[layer][btn as usize] {
+                                button_states[layer][btn as usize] = false;
                                 needs_redraw = true;
-                                emit(&mut uinput, EventKind::Key, layer.buttons[btn].action as u16, 0);
-                                emit(&mut uinput, EventKind::Synchronize, SynchronizeKind::Report as u16, 0);
+                                toggle_key(&mut uinput, layers[active_layer].buttons[btn as usize].action, 0);
                             }
                         }
                         _ => {}
