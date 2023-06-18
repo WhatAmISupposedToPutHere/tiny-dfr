@@ -1,31 +1,22 @@
 use std::{
-    fs::{File, OpenOptions, self},
+    fs::{File, OpenOptions},
     os::{
         fd::AsRawFd,
-        unix::{io::{AsFd, BorrowedFd, OwnedFd}, fs::OpenOptionsExt}
+        unix::{io::OwnedFd, fs::OpenOptionsExt}
     },
-    path::{Path, PathBuf},
+    path::Path,
     collections::HashMap,
-    time::Instant,
-    io::Write
 };
 use cairo::{
     ImageSurface, Format, Context, Surface,
     FontSlant, FontWeight
 };
-use drm::{
-    ClientCapability, Device as DrmDevice, buffer::DrmFourcc,
-    control::{
-        connector, Device as ControlDevice, property, ResourceHandle, atomic, AtomicCommitFlags,
-        dumbbuffer::DumbBuffer, framebuffer, ClipRect
-    }
-};
-use anyhow::{Result, anyhow};
+use drm::control::ClipRect;
+use anyhow::Result;
 use input::{
     Libinput, LibinputInterface, Device as InputDevice,
     event::{
         Event, device::DeviceEvent, EventTrait,
-        switch::{Switch, SwitchEvent, SwitchState},
         touch::{TouchEvent, TouchEventPosition, TouchEventSlot}
     }
 };
@@ -33,46 +24,19 @@ use libc::{O_RDONLY, O_RDWR, O_WRONLY};
 use input_linux::{uinput::UInputHandle, EventKind, Key, SynchronizeKind};
 use input_linux_sys::{uinput_setup, input_id, timeval, input_event};
 use nix::poll::{poll, PollFd, PollFlags};
-use privdrop;
+use privdrop::PrivDrop;
+
+mod backlight;
+mod display;
+
+use backlight::BacklightManager;
+use display::DrmBackend;
 
 const DFR_WIDTH: i32 = 2008;
 const DFR_HEIGHT: i32 = 64;
 const BUTTON_COLOR_INACTIVE: f64 = 0.267;
 const BUTTON_COLOR_ACTIVE: f64 = 0.567;
 const TIMEOUT_MS: i32 = 30 * 1000;
-
-struct Card(File);
-impl AsFd for Card {
-    fn as_fd(&self) -> BorrowedFd<'_> {
-        self.0.as_fd()
-    }
-}
-
-impl ControlDevice for Card {}
-impl DrmDevice for Card {}
-
-impl Card {
-    fn open(path: &Path) -> Self {
-        let mut options = OpenOptions::new();
-        options.read(true);
-        options.write(true);
-
-        Card(options.open(path).unwrap())
-    }
-}
-
-struct DrmBackend {
-    card: Card,
-    db: DumbBuffer,
-    fb: framebuffer::Handle
-}
-
-impl Drop for DrmBackend {
-    fn drop(&mut self) {
-        self.card.destroy_framebuffer(self.fb).unwrap();
-        self.card.destroy_dumb_buffer(self.db).unwrap();
-    }
-}
 
 struct Button {
     text: String,
@@ -147,162 +111,6 @@ impl FunctionLayer {
     }
 }
 
-fn find_prop_id<T: ResourceHandle>(
-    card: &Card,
-    handle: T,
-    name: &'static str,
-) -> Result<property::Handle> {
-    let props = card.get_properties(handle)?;
-    for id in props.as_props_and_values().0 {
-        let info = card.get_property(*id)?;
-        if info.name().to_str()? == name {
-            return Ok(*id);
-        }
-    }
-    return Err(anyhow!("Property not found"));
-}
-
-fn try_open_card(path: &Path) -> Result<DrmBackend> {
-    let card = Card::open(path);
-    card.set_client_capability(ClientCapability::UniversalPlanes, true)?;
-    card.set_client_capability(ClientCapability::Atomic, true)?;
-    card.acquire_master_lock()?;
-
-
-    let res = card.resource_handles()?;
-    let coninfo = res
-        .connectors()
-        .iter()
-        .flat_map(|con| card.get_connector(*con, true))
-        .collect::<Vec<_>>();
-    let crtcinfo = res
-        .crtcs()
-        .iter()
-        .flat_map(|crtc| card.get_crtc(*crtc))
-        .collect::<Vec<_>>();
-
-    let con = coninfo
-        .iter()
-        .find(|&i| i.state() == connector::State::Connected)
-        .ok_or(anyhow!("No connected connectors found"))?;
-
-    let &mode = con.modes().get(0).ok_or(anyhow!("No modes found"))?;
-    let (disp_width, disp_height) = mode.size();
-    if disp_height / disp_width < 30 {
-        return Err(anyhow!("This does not look like a touchbar"));
-    }
-    let crtc = crtcinfo.get(0).ok_or(anyhow!("No crtcs found"))?;
-    let fmt = DrmFourcc::Xrgb8888;
-    let db = card.create_dumb_buffer((64, disp_height.into()), fmt, 32)?;
-
-    let fb = card.add_framebuffer(&db, 24, 32)?;
-    let plane = *card.plane_handles()?.get(0).ok_or(anyhow!("No planes found"))?;
-
-    let mut atomic_req = atomic::AtomicModeReq::new();
-    atomic_req.add_property(
-        con.handle(),
-        find_prop_id(&card, con.handle(), "CRTC_ID")?,
-        property::Value::CRTC(Some(crtc.handle())),
-    );
-    let blob = card.create_property_blob(&mode)?;
-
-    atomic_req.add_property(
-        crtc.handle(),
-        find_prop_id(&card, crtc.handle(), "MODE_ID")?,
-        blob,
-    );
-    atomic_req.add_property(
-        crtc.handle(),
-        find_prop_id(&card, crtc.handle(), "ACTIVE")?,
-        property::Value::Boolean(true),
-    );
-    atomic_req.add_property(
-        plane,
-        find_prop_id(&card, plane, "FB_ID")?,
-        property::Value::Framebuffer(Some(fb)),
-    );
-    atomic_req.add_property(
-        plane,
-        find_prop_id(&card, plane, "CRTC_ID")?,
-        property::Value::CRTC(Some(crtc.handle())),
-    );
-    atomic_req.add_property(
-        plane,
-        find_prop_id(&card, plane, "SRC_X")?,
-        property::Value::UnsignedRange(0),
-    );
-    atomic_req.add_property(
-        plane,
-        find_prop_id(&card, plane, "SRC_Y")?,
-        property::Value::UnsignedRange(0),
-    );
-    atomic_req.add_property(
-        plane,
-        find_prop_id(&card, plane, "SRC_W")?,
-        property::Value::UnsignedRange((mode.size().0 as u64) << 16),
-    );
-    atomic_req.add_property(
-        plane,
-        find_prop_id(&card, plane, "SRC_H")?,
-        property::Value::UnsignedRange((mode.size().1 as u64) << 16),
-    );
-    atomic_req.add_property(
-        plane,
-        find_prop_id(&card, plane, "CRTC_X")?,
-        property::Value::SignedRange(0),
-    );
-    atomic_req.add_property(
-        plane,
-        find_prop_id(&card, plane, "CRTC_Y")?,
-        property::Value::SignedRange(0),
-    );
-    atomic_req.add_property(
-        plane,
-        find_prop_id(&card, plane, "CRTC_W")?,
-        property::Value::UnsignedRange(mode.size().0 as u64),
-    );
-    atomic_req.add_property(
-        plane,
-        find_prop_id(&card, plane, "CRTC_H")?,
-        property::Value::UnsignedRange(mode.size().1 as u64),
-    );
-
-    card.atomic_commit(AtomicCommitFlags::ALLOW_MODESET, atomic_req)?;
-
-
-    Ok(DrmBackend { card, db, fb })
-}
-
-fn open_card() -> Result<DrmBackend> {
-    for entry in fs::read_dir("/dev/dri/")? {
-        let entry = entry?;
-        if !entry.file_name().to_string_lossy().starts_with("card") {
-            continue
-        }
-        match try_open_card(&entry.path()) {
-            Ok(card) => return Ok(card),
-            Err(_) => {}
-        }
-    }
-    Err(anyhow!("No touchbar device found"))
-}
-
-fn find_backlight() -> Result<PathBuf> {
-    for entry in fs::read_dir("/sys/class/backlight/")? {
-        let entry = entry?;
-        if entry.file_name().to_string_lossy().contains("display-pipe") {
-            let mut path = entry.path();
-            path.push("brightness");
-            return Ok(path);
-        }
-    }
-    Err(anyhow!("No backlight device found"))
-}
-
-fn set_backlight(mut file: &File, value: u32) {
-    file.write(format!("{}\n", value).as_bytes()).unwrap();
-}
-
 struct Interface;
 
 impl LibinputInterface for Interface {
@@ -363,8 +171,7 @@ fn main() {
     };
     let mut button_state = vec![false; 12];
     let mut needs_redraw = true;
-    let mut drm = open_card().unwrap();
-    let bl_path = find_backlight().unwrap();
+    let mut drm = DrmBackend::open_card().unwrap();
     let mut input_tb = Libinput::new_with_udev(Interface);
     let mut input_main = Libinput::new_with_udev(Interface);
     input_tb.udev_assign_seat("seat-touchbar").unwrap();
@@ -396,33 +203,30 @@ fn main() {
     }).unwrap();
     uinput.dev_create().unwrap();
 
-    let bl_file = OpenOptions::new().write(true).open(bl_path).unwrap();
+    let mut backlight = BacklightManager::new();
 
-    privdrop::PrivDrop::default()
-    .chroot("/var/empty")
-    .user("nobody")
-    .group("nobody")
-    .apply()
-    .unwrap_or_else(|e| { panic!("Failed to drop privileges: {}", e) });
+    PrivDrop::default()
+        .chroot("/var/empty")
+        .user("nobody")
+        .group("nobody")
+        .apply()
+        .unwrap_or_else(|e| { panic!("Failed to drop privileges: {}", e) });
 
     let mut digitizer: Option<InputDevice> = None;
     let mut touches = HashMap::new();
-    let mut last_active = Instant::now();
-    let mut lid_state = SwitchState::Off;
-    let mut current_bl = 42;
     loop {
         if needs_redraw {
             needs_redraw = false;
             layer.draw(&surface, &button_state);
-            let mut map = drm.card.map_dumb_buffer(&mut drm.db).unwrap();
             let data = surface.data().unwrap();
-            map.as_mut()[..data.len()].copy_from_slice(&data);
-            drm.card.dirty_framebuffer(drm.fb, &[ClipRect{x1: 0, y1: 0, x2: DFR_HEIGHT as u16, y2: DFR_WIDTH as u16}]).unwrap();
+            drm.map().unwrap().as_mut()[..data.len()].copy_from_slice(&data);
+            drm.dirty(&[ClipRect{x1: 0, y1: 0, x2: DFR_HEIGHT as u16, y2: DFR_WIDTH as u16}]).unwrap();
         }
         poll(&mut [pollfd_tb, pollfd_main], TIMEOUT_MS).unwrap();
         input_tb.dispatch().unwrap();
         input_main.dispatch().unwrap();
         for event in &mut input_tb.clone().chain(input_main.clone()) {
+            backlight.process_event(&event);
             match event {
                 Event::Device(DeviceEvent::Added(evt)) => {
                     let dev = evt.device();
@@ -431,7 +235,6 @@ fn main() {
                     }
                 },
                 Event::Touch(te) => {
-                    last_active = Instant::now();
                     if Some(te.device()) != digitizer {
                         continue
                     }
@@ -439,8 +242,8 @@ fn main() {
                         TouchEvent::Down(dn) => {
                             let x = dn.x_transformed(DFR_WIDTH as u32);
                             let y = dn.y_transformed(DFR_HEIGHT as u32);
-                            let btn = (x / (DFR_WIDTH as f64 / 12.0)) as u32;
-                            if button_hit(12, btn, x, y) {
+                            let btn = (x / (DFR_WIDTH as f64 / layer.buttons.len() as f64)) as u32;
+                            if button_hit(layer.buttons.len() as u32, btn, x, y) {
                                 touches.insert(dn.seat_slot(), btn);
                                 button_state[btn as usize] = true;
                                 needs_redraw = true;
@@ -456,7 +259,7 @@ fn main() {
                             let x = mtn.x_transformed(DFR_WIDTH as u32);
                             let y = mtn.y_transformed(DFR_HEIGHT as u32);
                             let btn = *touches.get(&mtn.seat_slot()).unwrap();
-                            let hit = button_hit(12, btn, x, y);
+                            let hit = button_hit(layer.buttons.len() as u32, btn, x, y);
                             if button_state[btn as usize] != hit {
                                 button_state[btn as usize] = hit;
                                 needs_redraw = true;
@@ -479,37 +282,9 @@ fn main() {
                         _ => {}
                     }
                 },
-                Event::Keyboard(_) | Event::Pointer(_) => {
-                    last_active = Instant::now();
-                },
-                Event::Switch(SwitchEvent::Toggle(toggle)) => {
-                    match toggle.switch() {
-                        Some(Switch::Lid) => {
-                            lid_state = toggle.switch_state();
-                            println!("Lid Switch event: {lid_state:?}");
-                            if toggle.switch_state() == SwitchState::Off {
-                                last_active = Instant::now();
-                            }
-                        }
-                        _ => {}
-                    }
-                }
                 _ => {}
             }
         }
-        let since_last_active = (Instant::now() - last_active).as_millis() as u64;
-        let new_bl = if lid_state == SwitchState::On {
-            0
-        } else if since_last_active < TIMEOUT_MS as u64 {
-            128
-        } else if since_last_active < TIMEOUT_MS as u64 * 2 {
-            1
-        } else {
-            0
-        };
-        if current_bl != new_bl {
-            current_bl = new_bl;
-            set_backlight(&bl_file, current_bl);
-        }
+        backlight.update_backlight();
     }
 }
