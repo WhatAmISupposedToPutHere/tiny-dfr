@@ -33,6 +33,7 @@ use libc::{O_RDONLY, O_RDWR, O_WRONLY};
 use input_linux::{uinput::UInputHandle, EventKind, Key, SynchronizeKind};
 use input_linux_sys::{uinput_setup, input_id, timeval, input_event};
 use nix::poll::{poll, PollFd, PollFlags};
+use privdrop;
 
 const DFR_WIDTH: i32 = 2008;
 const DFR_HEIGHT: i32 = 64;
@@ -298,8 +299,7 @@ fn find_backlight() -> Result<PathBuf> {
     Err(anyhow!("No backlight device found"))
 }
 
-fn set_backlight(path: &Path, value: u32) {
-    let mut file = OpenOptions::new().write(true).open(path).unwrap();
+fn set_backlight(mut file: &File, value: u32) {
     file.write(format!("{}\n", value).as_bytes()).unwrap();
 }
 
@@ -395,6 +395,16 @@ fn main() {
         ]
     }).unwrap();
     uinput.dev_create().unwrap();
+
+    let bl_file = OpenOptions::new().write(true).open(bl_path).unwrap();
+
+    privdrop::PrivDrop::default()
+    .chroot("/var/empty")
+    .user("nobody")
+    .group("nobody")
+    .apply()
+    .unwrap_or_else(|e| { panic!("Failed to drop privileges: {}", e) });
+
     let mut digitizer: Option<InputDevice> = None;
     let mut touches = HashMap::new();
     let mut last_active = Instant::now();
@@ -499,7 +509,7 @@ fn main() {
         };
         if current_bl != new_bl {
             current_bl = new_bl;
-            set_backlight(&bl_path, current_bl);
+            set_backlight(&bl_file, current_bl);
         }
     }
 }
