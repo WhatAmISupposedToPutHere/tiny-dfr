@@ -1,0 +1,11 @@
+[Unit]
+Description=Tiny Apple silicon touch bar daemon
+After=systemd-user-sessions.service getty@tty1.service plymouth-quit.service systemd-logind.service
+StartLimitIntervalSec=30
+StartLimitBurst=2
+ConditionFirmware=|device-tree-compatible(apple,j293)
+ConditionFirmware=|device-tree-compatible(apple,j493)
+
+[Service]
+ExecStart=/usr/bin/tiny-dfr
+Restart=always
