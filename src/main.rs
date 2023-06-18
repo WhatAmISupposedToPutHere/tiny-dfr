@@ -9,8 +9,9 @@ use std::{
 };
 use cairo::{
     ImageSurface, Format, Context, Surface,
-    FontSlant, FontWeight
+    FontSlant, FontWeight, Rectangle
 };
+use rsvg::{Loader, CairoRenderer, SvgHandle};
 use drm::control::ClipRect;
 use anyhow::Result;
 use input::{
@@ -39,9 +40,49 @@ const BUTTON_COLOR_INACTIVE: f64 = 0.267;
 const BUTTON_COLOR_ACTIVE: f64 = 0.567;
 const TIMEOUT_MS: i32 = 30 * 1000;
 
+enum ButtonImage {
+    Text(&'static str),
+    Svg(SvgHandle)
+}
+
 struct Button {
-    text: String,
+    image: ButtonImage,
     action: Key
+}
+
+impl Button {
+    fn new_text(text: &'static str, action: Key) -> Button {
+        Button {
+            action, image: ButtonImage::Text(text)
+        }
+    }
+    fn new_svg(path: &'static str, action: Key) -> Button {
+        let svg = Loader::new().read_path(format!("/usr/share/tiny-dfr/{}.svg", path)).unwrap();
+        Button {
+            action, image: ButtonImage::Svg(svg)
+        }
+    }
+    fn render(&self, c: &Context, left_edge: f64, button_width: f64) {
+        match &self.image {
+            ButtonImage::Text(text) => {
+                let extents = c.text_extents(text).unwrap();
+                c.move_to(
+                    left_edge + button_width / 2.0 - extents.width() / 2.0,
+                    DFR_HEIGHT as f64 / 2.0 + extents.height() / 2.0
+                );
+                c.show_text(text).unwrap();
+            },
+            ButtonImage::Svg(svg) => {
+                let renderer = CairoRenderer::new(&svg);
+                let y = 0.18 * DFR_HEIGHT as f64;
+                let size = DFR_HEIGHT as f64 - y * 2.0;
+                let x = left_edge + button_width / 2.0 - size / 2.0;
+                renderer.render_document(c,
+                    &Rectangle::new(x, y, size, size)
+                ).unwrap();
+            }
+        }
+    }
 }
 
 struct FunctionLayer {
@@ -60,7 +101,7 @@ impl FunctionLayer {
         let top = bot + 0.82 * DFR_HEIGHT as f64 - 2.0 * radius;
         c.set_source_rgb(0.0, 0.0, 0.0);
         c.paint().unwrap();
-        c.select_font_face("sans-serif", FontSlant::Normal, FontWeight::Normal);
+        c.select_font_face("sans-serif", FontSlant::Normal, FontWeight::Bold);
         c.set_font_size(32.0);
         for (i, button) in self.buttons.iter().enumerate() {
             let left_edge = i as f64 * (button_width + spacing_width) + spacing_width;
@@ -102,12 +143,7 @@ impl FunctionLayer {
 
             c.fill().unwrap();
             c.set_source_rgb(1.0, 1.0, 1.0);
-            let extents = c.text_extents(&button.text).unwrap();
-            c.move_to(
-                left_edge + button_width / 2.0 - extents.width() / 2.0,
-                DFR_HEIGHT as f64 / 2.0 + extents.height() / 2.0
-            );
-            c.show_text(&button.text).unwrap();
+            button.render(&c, left_edge, button_width);
         }
     }
 }
@@ -163,37 +199,38 @@ fn main() {
     let layers = [
         FunctionLayer {
             buttons: vec![
-                Button { text: "F1".to_string(), action: Key::F1 },
-                Button { text: "F2".to_string(), action: Key::F2 },
-                Button { text: "F3".to_string(), action: Key::F3 },
-                Button { text: "F4".to_string(), action: Key::F4 },
-                Button { text: "F5".to_string(), action: Key::F5 },
-                Button { text: "F6".to_string(), action: Key::F6 },
-                Button { text: "F7".to_string(), action: Key::F7 },
-                Button { text: "F8".to_string(), action: Key::F8 },
-                Button { text: "F9".to_string(), action: Key::F9 },
-                Button { text: "F10".to_string(), action: Key::F10 },
-                Button { text: "F11".to_string(), action: Key::F11 },
-                Button { text: "F12".to_string(), action: Key::F12 }
+                Button::new_text("F1", Key::F1),
+                Button::new_text("F2", Key::F2),
+                Button::new_text("F3", Key::F3),
+                Button::new_text("F4", Key::F4),
+                Button::new_text("F5", Key::F5),
+                Button::new_text("F6", Key::F6),
+                Button::new_text("F7", Key::F7),
+                Button::new_text("F8", Key::F8),
+                Button::new_text("F9", Key::F9),
+                Button::new_text("F10", Key::F10),
+                Button::new_text("F11", Key::F11),
+                Button::new_text("F12", Key::F12)
             ]
         },
         FunctionLayer {
             buttons: vec![
-                Button { text: "B-Dn".to_string(), action: Key::BrightnessDown },
-                Button { text: "B-Up".to_string(), action: Key::BrightnessUp },
-                Button { text: "Mic0".to_string(), action: Key::MicMute },
-                Button { text: "Srch".to_string(), action: Key::Search },
-                Button { text: "BlDn".to_string(), action: Key::IllumDown },
-                Button { text: "BlUp".to_string(), action: Key::IllumUp },
-                Button { text: "Revd".to_string(), action: Key::PreviousSong },
-                Button { text: "Paus".to_string(), action: Key::PlayPause },
-                Button { text: "Fwrd".to_string(), action: Key::NextSong },
-                Button { text: "Mute".to_string(), action: Key::Mute },
-                Button { text: "VolD".to_string(), action: Key::VolumeDown },
-                Button { text: "VolU".to_string(), action: Key::VolumeUp }
+                Button::new_svg("brightness_low", Key::BrightnessDown),
+                Button::new_svg("brightness_high", Key::BrightnessUp),
+                Button::new_svg("mic_off", Key::MicMute),
+                Button::new_svg("search", Key::Search),
+                Button::new_svg("backlight_low", Key::IllumDown),
+                Button::new_svg("backlight_high", Key::IllumUp),
+                Button::new_svg("skip_previous", Key::PreviousSong),
+                Button::new_svg("pause", Key::PlayPause),
+                Button::new_svg("skip_next", Key::NextSong),
+                Button::new_svg("volume_off", Key::Mute),
+                Button::new_svg("volume_down", Key::VolumeDown),
+                Button::new_svg("volume_up", Key::VolumeUp)
             ]
         }
     ];
+
     let mut button_states = [vec![false; 12], vec![false; 12]];
     let mut needs_redraw = true;
     let mut drm = DrmBackend::open_card().unwrap();
