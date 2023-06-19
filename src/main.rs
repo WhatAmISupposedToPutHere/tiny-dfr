@@ -194,6 +194,19 @@ fn toggle_key<F>(uinput: &mut UInputHandle<F>, code: Key, value: i32) where F: A
 }
 
 fn main() {
+    let mut uinput = UInputHandle::new(OpenOptions::new().write(true).open("/dev/uinput").unwrap());
+    let mut backlight = BacklightManager::new();
+
+    // drop privileges to input and video group
+    let groups = ["input", "video"];
+
+    PrivDrop::default()
+        .user("nobody")
+        .group("nobody")
+        .group_list(&groups)
+        .apply()
+        .unwrap_or_else(|e| { panic!("Failed to drop privileges: {}", e) });
+
     let mut surface = ImageSurface::create(Format::ARgb32, DFR_HEIGHT, DFR_WIDTH).unwrap();
     let mut active_layer = 0;
     let layers = [
@@ -240,7 +253,6 @@ fn main() {
     input_main.udev_assign_seat("seat0").unwrap();
     let pollfd_tb = PollFd::new(input_tb.as_raw_fd(), PollFlags::POLLIN);
     let pollfd_main = PollFd::new(input_main.as_raw_fd(), PollFlags::POLLIN);
-    let mut uinput = UInputHandle::new(OpenOptions::new().write(true).open("/dev/uinput").unwrap());
     uinput.set_evbit(EventKind::Key).unwrap();
     for layer in &layers {
         for button in &layer.buttons {
@@ -267,8 +279,6 @@ fn main() {
     }).unwrap();
     uinput.dev_create().unwrap();
 
-    let mut backlight = BacklightManager::new();
-
     let mut digitizer: Option<InputDevice> = None;
     let mut touches = HashMap::new();
     loop {
@@ -289,12 +299,6 @@ fn main() {
                     let dev = evt.device();
                     if dev.name().contains(" Touch Bar") {
                         digitizer = Some(dev);
-                        PrivDrop::default()
-                            .chroot("/var/empty")
-                            .user("nobody")
-                            .group("nobody")
-                            .apply()
-                            .unwrap_or_else(|e| { panic!("Failed to drop privileges: {}", e) });
                     }
                 },
                 Event::Keyboard(KeyboardEvent::Key(key)) => {
