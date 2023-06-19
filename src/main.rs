@@ -269,13 +269,6 @@ fn main() {
 
     let mut backlight = BacklightManager::new();
 
-    PrivDrop::default()
-        .chroot("/var/empty")
-        .user("nobody")
-        .group("nobody")
-        .apply()
-        .unwrap_or_else(|e| { panic!("Failed to drop privileges: {}", e) });
-
     let mut digitizer: Option<InputDevice> = None;
     let mut touches = HashMap::new();
     loop {
@@ -296,6 +289,12 @@ fn main() {
                     let dev = evt.device();
                     if dev.name().contains(" Touch Bar") {
                         digitizer = Some(dev);
+                        PrivDrop::default()
+                            .chroot("/var/empty")
+                            .user("nobody")
+                            .group("nobody")
+                            .apply()
+                            .unwrap_or_else(|e| { panic!("Failed to drop privileges: {}", e) });
                     }
                 },
                 Event::Keyboard(KeyboardEvent::Key(key)) => {
