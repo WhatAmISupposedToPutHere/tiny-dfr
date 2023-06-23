@@ -236,9 +236,9 @@ fn main() {
                 Button::new_svg("search", Key::Search),
                 Button::new_svg("backlight_low", Key::IllumDown),
                 Button::new_svg("backlight_high", Key::IllumUp),
-                Button::new_svg("skip_previous", Key::PreviousSong),
-                Button::new_svg("pause", Key::PlayPause),
-                Button::new_svg("skip_next", Key::NextSong),
+                Button::new_svg("fast_rewind", Key::PreviousSong),
+                Button::new_svg("play_pause", Key::PlayPause),
+                Button::new_svg("fast_forward", Key::NextSong),
                 Button::new_svg("volume_off", Key::Mute),
                 Button::new_svg("volume_down", Key::VolumeDown),
                 Button::new_svg("volume_up", Key::VolumeUp)
