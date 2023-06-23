@@ -36,8 +36,8 @@ use display::DrmBackend;
 
 const DFR_WIDTH: i32 = 2008;
 const DFR_HEIGHT: i32 = 64;
-const BUTTON_COLOR_INACTIVE: f64 = 0.267;
-const BUTTON_COLOR_ACTIVE: f64 = 0.567;
+const BUTTON_COLOR_INACTIVE: f64 = 0.200;
+const BUTTON_COLOR_ACTIVE: f64 = 0.400;
 const TIMEOUT_MS: i32 = 30 * 1000;
 
 enum ButtonImage {
