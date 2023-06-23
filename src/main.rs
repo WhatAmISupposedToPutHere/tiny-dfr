@@ -74,7 +74,7 @@ impl Button {
             },
             ButtonImage::Svg(svg) => {
                 let renderer = CairoRenderer::new(&svg);
-                let y = 0.18 * DFR_HEIGHT as f64;
+                let y = 0.10 * DFR_HEIGHT as f64;
                 let size = DFR_HEIGHT as f64 - y * 2.0;
                 let x = left_edge + button_width / 2.0 - size / 2.0;
                 renderer.render_document(c,
@@ -97,8 +97,8 @@ impl FunctionLayer {
         let button_width = DFR_WIDTH as f64 / (self.buttons.len() + 1) as f64;
         let spacing_width = (DFR_WIDTH as f64 - self.buttons.len() as f64 * button_width) / (self.buttons.len() - 1) as f64;
         let radius = 8.0f64;
-        let bot = 0.09 * DFR_HEIGHT as f64 + radius;
-        let top = bot + 0.82 * DFR_HEIGHT as f64 - 2.0 * radius;
+        let bot = (DFR_HEIGHT as f64) * 0.15;
+        let top = (DFR_HEIGHT as f64) * 0.85;
         c.set_source_rgb(0.0, 0.0, 0.0);
         c.paint().unwrap();
         c.select_font_face("sans-serif", FontSlant::Normal, FontWeight::Bold);
