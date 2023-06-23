@@ -22,7 +22,7 @@ use input::{
         keyboard::{KeyboardEvent, KeyboardEventTrait, KeyState}
     }
 };
-use libc::{O_RDONLY, O_RDWR, O_WRONLY, c_char};
+use libc::{O_ACCMODE, O_RDONLY, O_RDWR, O_WRONLY, c_char};
 use input_linux::{uinput::UInputHandle, EventKind, Key, SynchronizeKind};
 use input_linux_sys::{uinput_setup, input_id, timeval, input_event};
 use nix::poll::{poll, PollFd, PollFlags};
@@ -152,10 +152,12 @@ struct Interface;
 
 impl LibinputInterface for Interface {
     fn open_restricted(&mut self, path: &Path, flags: i32) -> Result<OwnedFd, i32> {
+        let mode = flags & O_ACCMODE;
+
         OpenOptions::new()
             .custom_flags(flags)
-            .read((flags & O_RDONLY != 0) | (flags & O_RDWR != 0))
-            .write((flags & O_WRONLY != 0) | (flags & O_RDWR != 0))
+            .read(mode == O_RDONLY || mode == O_RDWR)
+            .write(mode == O_WRONLY || mode == O_RDWR)
             .open(path)
             .map(|file| file.into())
             .map_err(|err| err.raw_os_error().unwrap())
