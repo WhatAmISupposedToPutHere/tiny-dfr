@@ -1,6 +1,6 @@
 use std::{
     fs::{File, OpenOptions, self},
-    path::PathBuf,
+    path::{PathBuf, Path},
     time::Instant,
     io::Write
 };
@@ -10,13 +10,19 @@ use input::event::{
 };
 use crate::TIMEOUT_MS;
 
+fn read_attr(path: &Path, attr: &str) -> u32 {
+    fs::read_to_string(path.join(attr))
+        .expect(&format!("Failed to read {attr}"))
+        .trim()
+        .parse::<u32>()
+        .expect(&format!("Failed to parse {attr}"))
+}
+
 fn find_backlight() -> Result<PathBuf> {
     for entry in fs::read_dir("/sys/class/backlight/")? {
         let entry = entry?;
         if entry.file_name().to_string_lossy().contains("display-pipe") {
-            let mut path = entry.path();
-            path.push("brightness");
-            return Ok(path);
+            return Ok(entry.path());
         }
     }
     Err(anyhow!("No backlight device found"))
@@ -36,11 +42,11 @@ pub struct BacklightManager {
 impl BacklightManager {
     pub fn new() -> BacklightManager {
         let bl_path = find_backlight().unwrap();
-        let bl_file = OpenOptions::new().write(true).open(bl_path).unwrap();
+        let bl_file = OpenOptions::new().write(true).open(bl_path.join("brightness")).unwrap();
         BacklightManager {
             bl_file,
             lid_state: SwitchState::Off,
-            current_bl: 42,
+            current_bl: read_attr(&bl_path, "brightness"),
             last_active: Instant::now()
         }
     }
