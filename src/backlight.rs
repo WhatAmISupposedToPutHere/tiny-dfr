@@ -2,7 +2,8 @@ use std::{
     fs::{File, OpenOptions, self},
     path::{PathBuf, Path},
     time::Instant,
-    io::Write
+    io::Write,
+    cmp::min,
 };
 use anyhow::{Result, anyhow};
 use input::event::{
@@ -51,6 +52,7 @@ fn set_backlight(mut file: &File, value: u32) {
 
 pub struct BacklightManager {
     last_active: Instant,
+    max_bl: u32,
     current_bl: u32,
     lid_state: SwitchState,
     bl_file: File,
@@ -65,6 +67,7 @@ impl BacklightManager {
         BacklightManager {
             bl_file,
             lid_state: SwitchState::Off,
+            max_bl: read_attr(&bl_path, "max_brightness"),
             current_bl: read_attr(&bl_path, "brightness"),
             last_active: Instant::now(),
             display_bl_path
@@ -98,7 +101,7 @@ impl BacklightManager {
     }
     pub fn update_backlight(&mut self, cfg: &Config) {
         let since_last_active = (Instant::now() - self.last_active).as_millis() as u64;
-        let new_bl = if self.lid_state == SwitchState::On {
+        let new_bl = min(self.max_bl, if self.lid_state == SwitchState::On {
             0
         } else if since_last_active < BRIGHTNESS_DIM_TIMEOUT as u64 {
             if cfg.adaptive_brightness {
@@ -110,7 +113,7 @@ impl BacklightManager {
             DIMMED_BRIGHTNESS
         } else {
             0
-        };
+        });
         if self.current_bl != new_bl {
             self.current_bl = new_bl;
             set_backlight(&self.bl_file, self.current_bl);
