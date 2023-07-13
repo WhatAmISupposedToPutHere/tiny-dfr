@@ -45,9 +45,6 @@ use pixel_shift::{PixelShiftManager, PIXEL_SHIFT_WIDTH_PX};
 use config::{ButtonConfig, Config};
 use crate::config::ConfigManager;
 
-const DFR_WIDTH: i32 = 2008;
-const DFR_HEIGHT: i32 = 60;
-const DFR_STRIDE: i32 = 64;
 const BUTTON_SPACING_PX: i32 = 16;
 const BUTTON_COLOR_INACTIVE: f64 = 0.200;
 const BUTTON_COLOR_ACTIVE: f64 = 0.400;
@@ -117,20 +114,20 @@ impl Button {
             changed: false,
         }
     }
-    fn render(&self, c: &Context, button_left_edge: f64, button_width: u64, y_shift: f64) {
+    fn render(&self, c: &Context, height: i32, button_left_edge: f64, button_width: u64, y_shift: f64) {
         match &self.image {
             ButtonImage::Text(text) => {
                 let extents = c.text_extents(text).unwrap();
                 c.move_to(
                     button_left_edge + (button_width as f64 / 2.0 - extents.width() / 2.0).round(),
-                    y_shift + (DFR_HEIGHT as f64 / 2.0 + extents.height() / 2.0).round()
+                    y_shift + (height as f64 / 2.0 + extents.height() / 2.0).round()
                 );
                 c.show_text(text).unwrap();
             },
             ButtonImage::Svg(svg) => {
                 let renderer = CairoRenderer::new(&svg);
                 let x = button_left_edge + (button_width as f64 / 2.0 - (ICON_SIZE / 2) as f64).round();
-                let y = y_shift + ((DFR_HEIGHT as f64 - ICON_SIZE as f64) / 2.0).round();
+                let y = y_shift + ((height as f64 - ICON_SIZE as f64) / 2.0).round();
 
                 renderer.render_document(c,
                     &Rectangle::new(x, y, ICON_SIZE as f64, ICON_SIZE as f64)
@@ -138,7 +135,7 @@ impl Button {
             }
             ButtonImage::Bitmap(surf) => {
                 let x = button_left_edge + (button_width as f64 / 2.0 - (ICON_SIZE / 2) as f64).round();
-                let y = y_shift + ((DFR_HEIGHT as f64 - ICON_SIZE as f64) / 2.0).round();
+                let y = y_shift + ((height as f64 - ICON_SIZE as f64) / 2.0).round();
                 c.set_source_surface(surf, x, y).unwrap();
                 c.rectangle(x, y, ICON_SIZE as f64, ICON_SIZE as f64);
                 c.fill().unwrap();
@@ -169,20 +166,20 @@ impl FunctionLayer {
             buttons: cfg.into_iter().map(Button::with_config).collect()
         }
     }
-    fn draw(&mut self, config: &Config, surface: &Surface, pixel_shift: (f64, f64), complete_redraw: bool) -> Vec<ClipRect> {
+    fn draw(&mut self, config: &Config, width: i32, height: i32, surface: &Surface, pixel_shift: (f64, f64), complete_redraw: bool) -> Vec<ClipRect> {
         let c = Context::new(&surface).unwrap();
         let mut modified_regions = if complete_redraw {
-            vec![ClipRect::new(0, 0, DFR_HEIGHT as u16, DFR_WIDTH as u16)]
+            vec![ClipRect::new(0, 0, height as u16, width as u16)]
         } else {
             Vec::new()
         };
-        c.translate(DFR_HEIGHT as f64, 0.0);
+        c.translate(height as f64, 0.0);
         c.rotate((90.0f64).to_radians());
         let pixel_shift_width = if config.enable_pixel_shift { PIXEL_SHIFT_WIDTH_PX } else { 0 };
-        let button_width = ((DFR_WIDTH - pixel_shift_width as i32) - (BUTTON_SPACING_PX * (self.buttons.len() - 1) as i32)) as f64 / self.buttons.len() as f64;
+        let button_width = ((width - pixel_shift_width as i32) - (BUTTON_SPACING_PX * (self.buttons.len() - 1) as i32)) as f64 / self.buttons.len() as f64;
         let radius = 8.0f64;
-        let bot = (DFR_HEIGHT as f64) * 0.15;
-        let top = (DFR_HEIGHT as f64) * 0.85;
+        let bot = (height as f64) * 0.15;
+        let top = (height as f64) * 0.85;
         let (pixel_shift_x, pixel_shift_y) = pixel_shift;
 
         if complete_redraw {
@@ -246,15 +243,15 @@ impl FunctionLayer {
 
             c.fill().unwrap();
             c.set_source_rgb(1.0, 1.0, 1.0);
-            button.render(&c, left_edge, button_width.ceil() as u64, pixel_shift_y);
+            button.render(&c, height, left_edge, button_width.ceil() as u64, pixel_shift_y);
 
             button.changed = false;
 
             if !complete_redraw {
                 modified_regions.push(ClipRect::new(
-                    DFR_HEIGHT as u16 - top as u16 - radius as u16,
+                    height as u16 - top as u16 - radius as u16,
                     left_edge as u16,
-                    DFR_HEIGHT as u16 - bot as u16 + radius as u16,
+                    height as u16 - bot as u16 + radius as u16,
                     left_edge as u16 + button_width as u16
                 ));
             }
@@ -284,13 +281,13 @@ impl LibinputInterface for Interface {
 }
 
 
-fn button_hit(num: u32, idx: u32, x: f64, y: f64) -> bool {
-    let button_width = (DFR_WIDTH - (BUTTON_SPACING_PX * (num - 1) as i32)) as f64 / num as f64;
+fn button_hit(num: u32, idx: u32, width: u16, height: u16, x: f64, y: f64) -> bool {
+    let button_width = (width as i32 - (BUTTON_SPACING_PX * (num - 1) as i32)) as f64 / num as f64;
     let left_edge = idx as f64 * (button_width + BUTTON_SPACING_PX as f64);
     if x < left_edge || x > (left_edge + button_width) {
         return false
     }
-    y > 0.1 * DFR_HEIGHT as f64 && y < 0.9 * DFR_HEIGHT as f64
+    y > 0.1 * height as f64 && y < 0.9 * height as f64
 }
 
 fn emit<F>(uinput: &mut UInputHandle<F>, ty: EventKind, code: u16, value: i32) where F: AsRawFd {
@@ -312,6 +309,7 @@ fn toggle_key<F>(uinput: &mut UInputHandle<F>, code: Key, value: i32) where F: A
 
 fn main() {
     let mut drm = DrmBackend::open_card().unwrap();
+    let (height, width) = drm.mode().size();
     let _ = panic::catch_unwind(AssertUnwindSafe(|| {
         real_main(&mut drm)
     }));
@@ -331,13 +329,15 @@ fn main() {
         }
     }
     drop(map);
-    drm.dirty(&[ClipRect::new(0, 0, DFR_HEIGHT as u16, DFR_WIDTH as u16)]).unwrap();
+    drm.dirty(&[ClipRect::new(0, 0, height as u16, width as u16)]).unwrap();
     let mut sigset = SigSet::empty();
     sigset.add(Signal::SIGTERM);
     sigset.wait().unwrap();
 }
 
 fn real_main(drm: &mut DrmBackend) {
+    let (height, width) = drm.mode().size();
+    let (db_width, db_height) = drm.fb_info().unwrap().size();
     let mut uinput = UInputHandle::new(OpenOptions::new().write(true).open("/dev/uinput").unwrap());
     let mut backlight = BacklightManager::new();
     let mut cfg_mgr = ConfigManager::new();
@@ -353,7 +353,7 @@ fn real_main(drm: &mut DrmBackend) {
         .apply()
         .unwrap_or_else(|e| { panic!("Failed to drop privileges: {}", e) });
 
-    let mut surface = ImageSurface::create(Format::ARgb32, DFR_STRIDE, DFR_WIDTH).unwrap();
+    let mut surface = ImageSurface::create(Format::ARgb32, db_width as i32, db_height as i32).unwrap();
     let mut active_layer = 0;
     let mut needs_complete_redraw = true;
 
@@ -411,7 +411,7 @@ fn real_main(drm: &mut DrmBackend) {
             } else {
                 (0.0, 0.0)
             };
-            let clips = layers[active_layer].draw(&cfg, &surface, shift, needs_complete_redraw);
+            let clips = layers[active_layer].draw(&cfg, width as i32, height as i32, &surface, shift, needs_complete_redraw);
             let data = surface.data().unwrap();
             drm.map().unwrap().as_mut()[..data.len()].copy_from_slice(&data);
             drm.dirty(&clips).unwrap();
@@ -451,10 +451,10 @@ fn real_main(drm: &mut DrmBackend) {
                     }
                     match te {
                         TouchEvent::Down(dn) => {
-                            let x = dn.x_transformed(DFR_WIDTH as u32);
-                            let y = dn.y_transformed(DFR_HEIGHT as u32);
-                            let btn = (x / (DFR_WIDTH as f64 / layers[active_layer].buttons.len() as f64)) as u32;
-                            if button_hit(layers[active_layer].buttons.len() as u32, btn, x, y) {
+                            let x = dn.x_transformed(width as u32);
+                            let y = dn.y_transformed(height as u32);
+                            let btn = (x / (width as f64 / layers[active_layer].buttons.len() as f64)) as u32;
+                            if button_hit(layers[active_layer].buttons.len() as u32, btn, width, height, x, y) {
                                 touches.insert(dn.seat_slot(), (active_layer, btn));
                                 layers[active_layer].buttons[btn as usize].set_active(&mut uinput, true);
                             }
@@ -464,10 +464,10 @@ fn real_main(drm: &mut DrmBackend) {
                                 continue;
                             }
 
-                            let x = mtn.x_transformed(DFR_WIDTH as u32);
-                            let y = mtn.y_transformed(DFR_HEIGHT as u32);
+                            let x = mtn.x_transformed(width as u32);
+                            let y = mtn.y_transformed(height as u32);
                             let (layer, btn) = *touches.get(&mtn.seat_slot()).unwrap();
-                            let hit = button_hit(layers[layer].buttons.len() as u32, btn, x, y);
+                            let hit = button_hit(layers[layer].buttons.len() as u32, btn, width, height, x, y);
                             layers[layer].buttons[btn as usize].set_active(&mut uinput, hit);
                         },
                         TouchEvent::Up(up) => {
