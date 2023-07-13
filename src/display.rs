@@ -7,7 +7,7 @@ use drm::{
     ClientCapability, Device as DrmDevice, buffer::DrmFourcc,
     control::{
         connector, Device as ControlDevice, property, ResourceHandle, atomic, AtomicCommitFlags,
-        dumbbuffer::{DumbBuffer, DumbMapping}, framebuffer, ClipRect
+        dumbbuffer::{DumbBuffer, DumbMapping}, framebuffer, ClipRect, Mode
     }
 };
 use anyhow::{Result, anyhow};
@@ -34,6 +34,7 @@ impl Card {
 
 pub struct DrmBackend {
     card: Card,
+    mode: Mode,
     db: DumbBuffer,
     fb: framebuffer::Handle
 }
@@ -169,7 +170,7 @@ fn try_open_card(path: &Path) -> Result<DrmBackend> {
     card.atomic_commit(AtomicCommitFlags::ALLOW_MODESET, atomic_req)?;
 
 
-    Ok(DrmBackend { card, db, fb })
+    Ok(DrmBackend { card, mode, db, fb })
 }
 
 impl DrmBackend {
@@ -188,6 +189,12 @@ impl DrmBackend {
             }
         }
         Err(anyhow!("No touchbar device found, attempted: [\n    {}\n]", errors.join(",\n    ")))
+    }
+    pub fn mode(&self) -> Mode {
+        self.mode
+    }
+    pub fn fb_info(&self) -> Result<framebuffer::Info> {
+        Ok(self.card.get_framebuffer(self.fb)?)
     }
     pub fn dirty(&self, clips: &[ClipRect]) -> Result<()> {
         Ok(self.card.dirty_framebuffer(self.fb, clips)?)
