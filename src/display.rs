@@ -192,4 +192,7 @@ impl DrmBackend {
     pub fn map(&mut self) -> Result<DumbMapping> {
         Ok(self.card.map_dumb_buffer(&mut self.db)?)
     }
+    pub fn fb_info(&self) -> Result<framebuffer::Info> {
+        Ok(self.card.get_framebuffer(self.fb)?)
+    }
 }
