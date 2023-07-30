@@ -22,7 +22,7 @@ use input::{
         keyboard::{KeyboardEvent, KeyboardEventTrait, KeyState}
     }
 };
-use libc::{O_RDONLY, O_RDWR, O_WRONLY};
+use libc::{O_RDONLY, O_RDWR, O_WRONLY, c_char};
 use input_linux::{uinput::UInputHandle, EventKind, Key, SynchronizeKind};
 use input_linux_sys::{uinput_setup, input_id, timeval, input_event};
 use nix::poll::{poll, PollFd, PollFlags};
@@ -259,6 +259,11 @@ fn main() {
             uinput.set_keybit(button.action).unwrap();
         }
     }
+    let mut dev_name_c = [0 as c_char; 80];
+    let dev_name = "Dynamic Function Row Virtual Input Device".as_bytes();
+    for i in 0..dev_name.len() {
+        dev_name_c[i] = dev_name[i] as c_char;
+    }
     uinput.dev_setup(&uinput_setup {
         id: input_id {
             bustype: 0x19,
@@ -267,15 +272,7 @@ fn main() {
             version: 1
         },
         ff_effects_max: 0,
-        name: [
-            b'D', b'y', b'n', b'a', b'm', b'i', b'c', b' ',
-            b'F', b'u', b'n', b'c', b't', b'i', b'o', b'n', b' ',
-            b'R', b'o', b'w', b' ',
-            b'V', b'i', b'r', b't', b'u', b'a', b'l', b' ',
-            b'I', b'n', b'p', b'u', b't', b' ',
-            b'D', b'e', b'v', b'i', b'c', b'e',
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-        ]
+        name: dev_name_c
     }).unwrap();
     uinput.dev_create().unwrap();
 
