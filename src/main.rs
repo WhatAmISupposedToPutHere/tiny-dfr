@@ -6,6 +6,7 @@ use std::{
     },
     path::Path,
     collections::HashMap,
+    ffi::CString,
 };
 use cairo::{
     ImageSurface, Format, Context, Surface,
@@ -22,7 +23,7 @@ use input::{
         keyboard::{KeyboardEvent, KeyboardEventTrait, KeyState}
     }
 };
-use libc::{O_RDONLY, O_RDWR, O_WRONLY};
+use libc::{O_RDONLY, O_RDWR, O_WRONLY, c_char};
 use input_linux::{uinput::UInputHandle, EventKind, Key, SynchronizeKind};
 use input_linux_sys::{uinput_setup, input_id, timeval, input_event};
 use nix::poll::{poll, PollFd, PollFlags};
@@ -259,6 +260,14 @@ fn main() {
             uinput.set_keybit(button.action).unwrap();
         }
     }
+    type NameType = [c_char; 80];
+    let name_str = CString::new("Dynamic Function Row Virtual Device").unwrap();
+    let mut name_c: NameType = [0; 80];
+    let name_bytes = name_str.as_bytes_with_nul();
+    name_c
+        .iter_mut()
+        .zip(name_bytes.iter())
+        .for_each(|(dest, src)| *dest = *src as c_char);
     uinput.dev_setup(&uinput_setup {
         id: input_id {
             bustype: 0x19,
@@ -267,15 +276,7 @@ fn main() {
             version: 1
         },
         ff_effects_max: 0,
-        name: [
-            b'D', b'y', b'n', b'a', b'm', b'i', b'c', b' ',
-            b'F', b'u', b'n', b'c', b't', b'i', b'o', b'n', b' ',
-            b'R', b'o', b'w', b' ',
-            b'V', b'i', b'r', b't', b'u', b'a', b'l', b' ',
-            b'I', b'n', b'p', b'u', b't', b' ',
-            b'D', b'e', b'v', b'i', b'c', b'e',
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-        ]
+        name: name_c,
     }).unwrap();
     uinput.dev_create().unwrap();
 
