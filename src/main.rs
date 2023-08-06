@@ -95,7 +95,7 @@ impl FunctionLayer {
         c.translate(DFR_HEIGHT as f64, 0.0);
         c.rotate((90.0f64).to_radians());
         let button_width = DFR_WIDTH as f64 / (self.buttons.len() + 1) as f64;
-        let spacing_width = (DFR_WIDTH as f64 - self.buttons.len() as f64 * button_width) / (self.buttons.len() + 1) as f64;
+        let spacing_width = (DFR_WIDTH as f64 - self.buttons.len() as f64 * button_width) / (self.buttons.len() - 1) as f64;
         let radius = 8.0f64;
         let bot = 0.09 * DFR_HEIGHT as f64 + radius;
         let top = bot + 0.82 * DFR_HEIGHT as f64 - 2.0 * radius;
@@ -104,7 +104,7 @@ impl FunctionLayer {
         c.select_font_face("sans-serif", FontSlant::Normal, FontWeight::Bold);
         c.set_font_size(32.0);
         for (i, button) in self.buttons.iter().enumerate() {
-            let left_edge = i as f64 * (button_width + spacing_width) + spacing_width;
+            let left_edge = i as f64 * (button_width + spacing_width);
             let color = if active_buttons[i] { BUTTON_COLOR_ACTIVE } else { BUTTON_COLOR_INACTIVE };
             c.set_source_rgb(color, color, color);
             // draw box with rounded corners
@@ -170,8 +170,8 @@ impl LibinputInterface for Interface {
 
 fn button_hit(num: u32, idx: u32, x: f64, y: f64) -> bool {
     let button_width = DFR_WIDTH as f64 / (num + 1) as f64;
-    let spacing_width = (DFR_WIDTH as f64 - num as f64 * button_width) / (num + 1) as f64;
-    let left_edge = idx as f64 * (button_width + spacing_width) + spacing_width;
+    let spacing_width = (DFR_WIDTH as f64 - num as f64 * button_width) / (num - 1) as f64;
+    let left_edge = idx as f64 * (button_width + spacing_width);
     if x < left_edge || x > (left_edge + button_width) {
         return false
     }
