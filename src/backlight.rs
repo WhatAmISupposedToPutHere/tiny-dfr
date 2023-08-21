@@ -52,7 +52,7 @@ impl BacklightManager {
     }
     pub fn process_event(&mut self, event: &Event) {
         match event {
-            Event::Keyboard(_) | Event::Pointer(_) | Event::Touch(_) => {
+            Event::Keyboard(_) | Event::Pointer(_) | Event::Gesture(_) | Event::Touch(_) => {
                 self.last_active = Instant::now();
             },
             Event::Switch(SwitchEvent::Toggle(toggle)) => {
