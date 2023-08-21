@@ -86,4 +86,7 @@ impl BacklightManager {
             set_backlight(&self.bl_file, self.current_bl);
         }
     }
+    pub fn current_bl(&self) -> u32 {
+        self.current_bl
+    }
 }

@@ -313,7 +313,7 @@ fn main() {
                     }
                 },
                 Event::Touch(te) => {
-                    if Some(te.device()) != digitizer {
+                    if Some(te.device()) != digitizer || backlight.current_bl() == 0 {
                         continue
                     }
                     match te {
