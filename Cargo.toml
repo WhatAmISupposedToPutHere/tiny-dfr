@@ -1,6 +1,6 @@
 [package]
 name = "tiny-dfr"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 license = "MIT AND Apache-2.0"
 description = "The most basic dynamic function row daemon possible"
@@ -10,8 +10,8 @@ repository = "https://github.com/WhatAmISupposedToPutHere/tiny-dfr"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-cairo-rs = { version = "0.17", default-features = false }
-librsvg = { git = "https://gitlab.gnome.org/GNOME/librsvg", rev = "b831e077174ae608d8cd09e532fc0e7ce1fe5c4f", version = "2.56.0" }
+cairo-rs = { version = "0.18", default-features = false }
+librsvg = "2.56.0"
 drm = "0.9"
 anyhow = "1"
 input = "0.8"
