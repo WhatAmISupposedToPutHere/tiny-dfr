@@ -204,7 +204,6 @@ fn main() {
 
     PrivDrop::default()
         .user("nobody")
-        .group("nobody")
         .group_list(&groups)
         .apply()
         .unwrap_or_else(|e| { panic!("Failed to drop privileges: {}", e) });
