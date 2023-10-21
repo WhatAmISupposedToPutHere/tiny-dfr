@@ -1,8 +1,7 @@
 [Unit]
 Description=Tiny Apple silicon touch bar daemon
 After=systemd-user-sessions.service getty@tty1.service plymouth-quit.service systemd-logind.service
-StartLimitIntervalSec=30
-StartLimitBurst=2
+BindsTo=dev-tiny_dfr_display.device dev-tiny_dfr_backlight.device
 
 [Service]
 ExecStart=/usr/bin/tiny-dfr

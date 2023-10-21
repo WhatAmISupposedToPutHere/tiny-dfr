@@ -1,2 +1,6 @@
 SUBSYSTEM=="input", ATTR{name}=="MacBookPro17,1 Touch Bar", TAG+="systemd", ENV{SYSTEMD_WANTS}="tiny-dfr.service"
 SUBSYSTEM=="input", ATTR{name}=="Mac14,7 Touch Bar", TAG+="systemd", ENV{SYSTEMD_WANTS}="tiny-dfr.service"
+
+SUBSYSTEM=="drm", KERNEL=="card[0-9]*", DRIVERS=="adp", TAG+="systemd", ENV{SYSTEMD_ALIAS}="/dev/tiny_dfr_display"
+
+SUBSYSTEM=="backlight", KERNEL=="228200000.display-pipe.0", DRIVERS=="panel-summit", TAG+="systemd", ENV{SYSTEMD_ALIAS}="/dev/tiny_dfr_backlight"
