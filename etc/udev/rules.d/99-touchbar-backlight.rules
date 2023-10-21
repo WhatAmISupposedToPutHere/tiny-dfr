@@ -1,2 +1,0 @@
-# The backlight is managed by tiny-df. Tell systemd to leave it alone
-SUBSYSTEM=="backlight", KERNEL=="228200000.display-pipe.0", DRIVERS=="panel-summit", ENV{SYSTEMD_READY}="0"
