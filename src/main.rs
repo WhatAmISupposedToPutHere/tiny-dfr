@@ -42,6 +42,7 @@ use pixel_shift::PIXEL_SHIFT_WIDTH_PX;
 
 const DFR_WIDTH: i32 = 2008;
 const DFR_HEIGHT: i32 = 64;
+const BUTTON_SPACING_PX: i32 = 16;
 const BUTTON_COLOR_INACTIVE: f64 = 0.200;
 const BUTTON_COLOR_ACTIVE: f64 = 0.400;
 const TIMEOUT_MS: i32 = 10 * 1000;
@@ -115,8 +116,7 @@ impl FunctionLayer {
         let c = Context::new(&surface).unwrap();
         c.translate(DFR_HEIGHT as f64, 0.0);
         c.rotate((90.0f64).to_radians());
-        let button_width = (DFR_WIDTH as u64 - PIXEL_SHIFT_WIDTH_PX) as f64 / (self.buttons.len() + 1) as f64;
-        let spacing_width = ((DFR_WIDTH as u64 - PIXEL_SHIFT_WIDTH_PX) as f64 - self.buttons.len() as f64 * button_width) / (self.buttons.len() - 1) as f64;
+        let button_width = ((DFR_WIDTH - PIXEL_SHIFT_WIDTH_PX as i32) - (BUTTON_SPACING_PX * (self.buttons.len() - 1) as i32)) as f64 / self.buttons.len() as f64;
         let radius = 8.0f64;
         let bot = (DFR_HEIGHT as f64) * 0.2;
         let top = (DFR_HEIGHT as f64) * 0.85;
@@ -127,7 +127,7 @@ impl FunctionLayer {
         c.select_font_face("sans-serif", FontSlant::Normal, FontWeight::Bold);
         c.set_font_size(32.0);
         for (i, button) in self.buttons.iter().enumerate() {
-            let left_edge = i as f64 * (button_width + spacing_width) + pixel_shift_x + (PIXEL_SHIFT_WIDTH_PX / 2) as f64;
+            let left_edge = i as f64 * (button_width + BUTTON_SPACING_PX as f64) + pixel_shift_x + (PIXEL_SHIFT_WIDTH_PX / 2) as f64;
             let color = if active_buttons[i] {
                 BUTTON_COLOR_ACTIVE
             } else if config.show_button_outlines {
@@ -198,9 +198,8 @@ impl LibinputInterface for Interface {
 
 
 fn button_hit(num: u32, idx: u32, x: f64, y: f64) -> bool {
-    let button_width = DFR_WIDTH as f64 / (num + 1) as f64;
-    let spacing_width = (DFR_WIDTH as f64 - num as f64 * button_width) / (num - 1) as f64;
-    let left_edge = idx as f64 * (button_width + spacing_width);
+    let button_width = (DFR_WIDTH - (BUTTON_SPACING_PX * (num - 1) as i32)) as f64 / num as f64;
+    let left_edge = idx as f64 * (button_width + BUTTON_SPACING_PX as f64);
     if x < left_edge || x > (left_edge + button_width) {
         return false
     }
