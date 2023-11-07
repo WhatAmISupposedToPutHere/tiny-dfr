@@ -1614,6 +1614,7 @@ dependencies = [
  "librsvg",
  "nix",
  "privdrop",
+ "rand 0.8.5",
 ]
 
 [[package]]

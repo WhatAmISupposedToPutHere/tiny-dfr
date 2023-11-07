@@ -10,8 +10,8 @@ use input::event::{
 };
 use crate::TIMEOUT_MS;
 
-const BRIGHTNESS_DIM_TIMEOUT: i32 = TIMEOUT_MS * 1; // should be a multiple of TIMEOUT_MS
-const BRIGHTNESS_OFF_TIMEOUT: i32 = TIMEOUT_MS * 2; // should be a multiple of TIMEOUT_MS
+const BRIGHTNESS_DIM_TIMEOUT: i32 = TIMEOUT_MS * 3; // should be a multiple of TIMEOUT_MS
+const BRIGHTNESS_OFF_TIMEOUT: i32 = TIMEOUT_MS * 6; // should be a multiple of TIMEOUT_MS
 const DEFAULT_BRIGHTNESS: u32 = 128;
 const DIMMED_BRIGHTNESS: u32 = 1;
 
