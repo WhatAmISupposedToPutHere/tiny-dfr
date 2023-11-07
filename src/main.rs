@@ -45,6 +45,7 @@ const DFR_HEIGHT: i32 = 64;
 const BUTTON_SPACING_PX: i32 = 16;
 const BUTTON_COLOR_INACTIVE: f64 = 0.200;
 const BUTTON_COLOR_ACTIVE: f64 = 0.400;
+const ICON_SIZE: i32 = 48;
 const TIMEOUT_MS: i32 = 10 * 1000;
 
 #[derive(Deserialize)]
@@ -83,24 +84,23 @@ impl Button {
             action, image: ButtonImage::Svg(svg)
         }
     }
-    fn render(&self, c: &Context, button_left_edge: f64, button_width: f64, y_shift: f64) {
+    fn render(&self, c: &Context, button_left_edge: f64, button_width: u64, y_shift: f64) {
         match &self.image {
             ButtonImage::Text(text) => {
                 let extents = c.text_extents(text).unwrap();
                 c.move_to(
-                    button_left_edge + button_width / 2.0 - extents.width() / 2.0,
-                    DFR_HEIGHT as f64 / 2.0 + extents.height() / 2.0
+                    button_left_edge + (button_width as f64 / 2.0 - extents.width() / 2.0).round(),
+                    y_shift + (DFR_HEIGHT as f64 / 2.0 + extents.height() / 2.0).round()
                 );
                 c.show_text(text).unwrap();
             },
             ButtonImage::Svg(svg) => {
                 let renderer = CairoRenderer::new(&svg);
-                let y = 0.12 * DFR_HEIGHT as f64;
-                let size = DFR_HEIGHT as f64 - y * 2.0;
-                let x = button_left_edge + button_width / 2.0 - size / 2.0;
+                let x = button_left_edge + (button_width as f64 / 2.0 - (ICON_SIZE / 2) as f64).round();
+                let y = y_shift + ((DFR_HEIGHT as f64 - ICON_SIZE as f64) / 2.0).round();
 
                 renderer.render_document(c,
-                    &Rectangle::new(x, y + y_shift, size, size)
+                    &Rectangle::new(x, y, ICON_SIZE as f64, ICON_SIZE as f64)
                 ).unwrap();
             }
         }
@@ -127,7 +127,7 @@ impl FunctionLayer {
         c.select_font_face("sans-serif", FontSlant::Normal, FontWeight::Bold);
         c.set_font_size(32.0);
         for (i, button) in self.buttons.iter().enumerate() {
-            let left_edge = i as f64 * (button_width + BUTTON_SPACING_PX as f64) + pixel_shift_x + (PIXEL_SHIFT_WIDTH_PX / 2) as f64;
+            let left_edge = (i as f64 * (button_width + BUTTON_SPACING_PX as f64)).floor() + pixel_shift_x + (PIXEL_SHIFT_WIDTH_PX / 2) as f64;
             let color = if active_buttons[i] {
                 BUTTON_COLOR_ACTIVE
             } else if config.show_button_outlines {
@@ -139,7 +139,7 @@ impl FunctionLayer {
             // draw box with rounded corners
             c.new_sub_path();
             let left = left_edge + radius;
-            let right = left_edge + button_width - radius;
+            let right = (left_edge + button_width.ceil()) - radius;
             c.arc(
                 right,
                 bot,
@@ -172,7 +172,7 @@ impl FunctionLayer {
 
             c.fill().unwrap();
             c.set_source_rgb(1.0, 1.0, 1.0);
-            button.render(&c, left_edge, button_width, pixel_shift_y);
+            button.render(&c, left_edge, button_width.ceil() as u64, pixel_shift_y);
         }
     }
 }
