@@ -12,11 +12,13 @@ repository = "https://github.com/WhatAmISupposedToPutHere/tiny-dfr"
 [dependencies]
 cairo-rs = { version = "0.18", default-features = false }
 librsvg = "2.56.0"
-drm = "0.9"
+drm = "0.10.0"
 anyhow = "1"
 input = "0.8"
 libc = "0.2"
 input-linux = "0.6"
 input-linux-sys = "0.8"
-nix = "0.26"
+nix = { version = "0.27", features = ["poll"] }
 privdrop = "0.5.3"
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"

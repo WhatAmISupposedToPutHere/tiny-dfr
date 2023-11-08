@@ -1,5 +1,5 @@
 use std::{
-    fs::{File, OpenOptions},
+    fs::{File, OpenOptions, read_to_string},
     os::{
         fd::AsRawFd,
         unix::{io::OwnedFd, fs::OpenOptionsExt}
@@ -7,13 +7,14 @@ use std::{
     path::Path,
     collections::HashMap,
 };
+use std::os::fd::AsFd;
 use cairo::{
     ImageSurface, Format, Context, Surface,
     FontSlant, FontWeight, Rectangle
 };
 use rsvg::{Loader, CairoRenderer, SvgHandle};
 use drm::control::ClipRect;
-use anyhow::Result;
+use anyhow::{Error, Result};
 use input::{
     Libinput, LibinputInterface, Device as InputDevice,
     event::{
@@ -27,6 +28,7 @@ use input_linux::{uinput::UInputHandle, EventKind, Key, SynchronizeKind};
 use input_linux_sys::{uinput_setup, input_id, timeval, input_event};
 use nix::poll::{poll, PollFd, PollFlags};
 use privdrop::PrivDrop;
+use serde::Deserialize;
 
 mod backlight;
 mod display;
@@ -39,6 +41,18 @@ const DFR_HEIGHT: i32 = 64;
 const BUTTON_COLOR_INACTIVE: f64 = 0.200;
 const BUTTON_COLOR_ACTIVE: f64 = 0.400;
 const TIMEOUT_MS: i32 = 30 * 1000;
+
+#[derive(Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct ConfigProxy {
+    media_layer_default: Option<bool>,
+    show_button_outlines: Option<bool>
+}
+
+struct Config {
+    media_layer_default: bool,
+    show_button_outlines: bool
+}
 
 enum ButtonImage {
     Text(&'static str),
@@ -90,7 +104,7 @@ struct FunctionLayer {
 }
 
 impl FunctionLayer {
-    fn draw(&self, surface: &Surface, active_buttons: &[bool]) {
+    fn draw(&self, config: &Config, surface: &Surface, active_buttons: &[bool]) {
         let c = Context::new(&surface).unwrap();
         c.translate(DFR_HEIGHT as f64, 0.0);
         c.rotate((90.0f64).to_radians());
@@ -105,7 +119,13 @@ impl FunctionLayer {
         c.set_font_size(32.0);
         for (i, button) in self.buttons.iter().enumerate() {
             let left_edge = i as f64 * (button_width + spacing_width);
-            let color = if active_buttons[i] { BUTTON_COLOR_ACTIVE } else { BUTTON_COLOR_INACTIVE };
+            let color = if active_buttons[i] {
+                BUTTON_COLOR_ACTIVE
+            } else if config.show_button_outlines {
+                BUTTON_COLOR_INACTIVE
+            } else {
+                0.0
+            };
             c.set_source_rgb(color, color, color);
             // draw box with rounded corners
             c.new_sub_path();
@@ -195,9 +215,24 @@ fn toggle_key<F>(uinput: &mut UInputHandle<F>, code: Key, value: i32) where F: A
     emit(uinput, EventKind::Synchronize, SynchronizeKind::Report as u16, 0);
 }
 
+fn load_config() -> Config {
+    let mut base = toml::from_str::<ConfigProxy>(&read_to_string("/usr/share/tiny-dfr/config.toml").unwrap()).unwrap();
+    let user = read_to_string("/etc/tiny-dfr/config.toml").map_err::<Error, _>(|e| e.into())
+        .and_then(|r| Ok(toml::from_str::<ConfigProxy>(&r)?));
+    if let Ok(user) = user {
+        base.media_layer_default = user.media_layer_default.or(base.media_layer_default);
+        base.show_button_outlines = user.show_button_outlines.or(base.show_button_outlines);
+    };
+    Config {
+        media_layer_default: base.media_layer_default.unwrap(),
+        show_button_outlines: base.show_button_outlines.unwrap()
+    }
+}
+
 fn main() {
     let mut uinput = UInputHandle::new(OpenOptions::new().write(true).open("/dev/uinput").unwrap());
     let mut backlight = BacklightManager::new();
+    let config = load_config();
 
     // drop privileges to input and video group
     let groups = ["input", "video"];
@@ -210,41 +245,39 @@ fn main() {
 
     let mut surface = ImageSurface::create(Format::ARgb32, DFR_HEIGHT, DFR_WIDTH).unwrap();
     let mut active_layer = 0;
-    let layers = [
-        FunctionLayer {
-            buttons: vec![
-                Button::new_text("F1", Key::F1),
-                Button::new_text("F2", Key::F2),
-                Button::new_text("F3", Key::F3),
-                Button::new_text("F4", Key::F4),
-                Button::new_text("F5", Key::F5),
-                Button::new_text("F6", Key::F6),
-                Button::new_text("F7", Key::F7),
-                Button::new_text("F8", Key::F8),
-                Button::new_text("F9", Key::F9),
-                Button::new_text("F10", Key::F10),
-                Button::new_text("F11", Key::F11),
-                Button::new_text("F12", Key::F12)
-            ]
-        },
-        FunctionLayer {
-            buttons: vec![
-                Button::new_svg("brightness_low", Key::BrightnessDown),
-                Button::new_svg("brightness_high", Key::BrightnessUp),
-                Button::new_svg("mic_off", Key::MicMute),
-                Button::new_svg("search", Key::Search),
-                Button::new_svg("backlight_low", Key::IllumDown),
-                Button::new_svg("backlight_high", Key::IllumUp),
-                Button::new_svg("fast_rewind", Key::PreviousSong),
-                Button::new_svg("play_pause", Key::PlayPause),
-                Button::new_svg("fast_forward", Key::NextSong),
-                Button::new_svg("volume_off", Key::Mute),
-                Button::new_svg("volume_down", Key::VolumeDown),
-                Button::new_svg("volume_up", Key::VolumeUp)
-            ]
-        }
-    ];
-
+    let fkey_layer = FunctionLayer {
+        buttons: vec![
+            Button::new_text("F1", Key::F1),
+            Button::new_text("F2", Key::F2),
+            Button::new_text("F3", Key::F3),
+            Button::new_text("F4", Key::F4),
+            Button::new_text("F5", Key::F5),
+            Button::new_text("F6", Key::F6),
+            Button::new_text("F7", Key::F7),
+            Button::new_text("F8", Key::F8),
+            Button::new_text("F9", Key::F9),
+            Button::new_text("F10", Key::F10),
+            Button::new_text("F11", Key::F11),
+            Button::new_text("F12", Key::F12)
+        ]
+    };
+    let media_layer = FunctionLayer {
+        buttons: vec![
+            Button::new_svg("brightness_low", Key::BrightnessDown),
+            Button::new_svg("brightness_high", Key::BrightnessUp),
+            Button::new_svg("mic_off", Key::MicMute),
+            Button::new_svg("search", Key::Search),
+            Button::new_svg("backlight_low", Key::IllumDown),
+            Button::new_svg("backlight_high", Key::IllumUp),
+            Button::new_svg("fast_rewind", Key::PreviousSong),
+            Button::new_svg("play_pause", Key::PlayPause),
+            Button::new_svg("fast_forward", Key::NextSong),
+            Button::new_svg("volume_off", Key::Mute),
+            Button::new_svg("volume_down", Key::VolumeDown),
+            Button::new_svg("volume_up", Key::VolumeUp)
+        ]
+    };
+    let layers = if config.media_layer_default { [media_layer, fkey_layer] } else { [fkey_layer, media_layer] };
     let mut button_states = [vec![false; 12], vec![false; 12]];
     let mut needs_redraw = true;
     let mut drm = DrmBackend::open_card().unwrap();
@@ -252,8 +285,10 @@ fn main() {
     let mut input_main = Libinput::new_with_udev(Interface);
     input_tb.udev_assign_seat("seat-touchbar").unwrap();
     input_main.udev_assign_seat("seat0").unwrap();
-    let pollfd_tb = PollFd::new(input_tb.as_raw_fd(), PollFlags::POLLIN);
-    let pollfd_main = PollFd::new(input_main.as_raw_fd(), PollFlags::POLLIN);
+    let fd_tb = input_tb.as_fd().try_clone_to_owned().unwrap();
+    let fd_main = input_main.as_fd().try_clone_to_owned().unwrap();
+    let pollfd_tb = PollFd::new(&fd_tb, PollFlags::POLLIN);
+    let pollfd_main = PollFd::new(&fd_main, PollFlags::POLLIN);
     uinput.set_evbit(EventKind::Key).unwrap();
     for layer in &layers {
         for button in &layer.buttons {
@@ -282,10 +317,10 @@ fn main() {
     loop {
         if needs_redraw {
             needs_redraw = false;
-            layers[active_layer].draw(&surface, &button_states[active_layer]);
+            layers[active_layer].draw(&config, &surface, &button_states[active_layer]);
             let data = surface.data().unwrap();
             drm.map().unwrap().as_mut()[..data.len()].copy_from_slice(&data);
-            drm.dirty(&[ClipRect{x1: 0, y1: 0, x2: DFR_HEIGHT as u16, y2: DFR_WIDTH as u16}]).unwrap();
+            drm.dirty(&[ClipRect::new(0, 0, DFR_HEIGHT as u16, DFR_WIDTH as u16)]).unwrap();
         }
         poll(&mut [pollfd_tb, pollfd_main], TIMEOUT_MS).unwrap();
         input_tb.dispatch().unwrap();
