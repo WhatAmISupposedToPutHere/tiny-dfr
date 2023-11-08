@@ -1622,6 +1622,7 @@ dependencies = [
  "librsvg",
  "nix 0.27.1",
  "privdrop",
+ "rand 0.8.5",
  "serde",
  "toml 0.8.8",
 ]

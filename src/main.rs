@@ -6,6 +6,7 @@ use std::{
     },
     path::Path,
     collections::HashMap,
+    cmp::min
 };
 use std::os::fd::AsFd;
 use cairo::{
@@ -32,26 +33,31 @@ use serde::Deserialize;
 
 mod backlight;
 mod display;
+mod pixel_shift;
 
 use backlight::BacklightManager;
 use display::DrmBackend;
+use pixel_shift::PixelShiftManager;
+use pixel_shift::PIXEL_SHIFT_WIDTH_PX;
 
 const DFR_WIDTH: i32 = 2008;
 const DFR_HEIGHT: i32 = 64;
 const BUTTON_COLOR_INACTIVE: f64 = 0.200;
 const BUTTON_COLOR_ACTIVE: f64 = 0.400;
-const TIMEOUT_MS: i32 = 30 * 1000;
+const TIMEOUT_MS: i32 = 10 * 1000;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "PascalCase")]
 struct ConfigProxy {
     media_layer_default: Option<bool>,
-    show_button_outlines: Option<bool>
+    show_button_outlines: Option<bool>,
+    enable_pixel_shift: Option<bool>
 }
 
 struct Config {
     media_layer_default: bool,
-    show_button_outlines: bool
+    show_button_outlines: bool,
+    enable_pixel_shift: bool
 }
 
 enum ButtonImage {
@@ -76,12 +82,12 @@ impl Button {
             action, image: ButtonImage::Svg(svg)
         }
     }
-    fn render(&self, c: &Context, left_edge: f64, button_width: f64) {
+    fn render(&self, c: &Context, button_left_edge: f64, button_width: f64, y_shift: f64) {
         match &self.image {
             ButtonImage::Text(text) => {
                 let extents = c.text_extents(text).unwrap();
                 c.move_to(
-                    left_edge + button_width / 2.0 - extents.width() / 2.0,
+                    button_left_edge + button_width / 2.0 - extents.width() / 2.0,
                     DFR_HEIGHT as f64 / 2.0 + extents.height() / 2.0
                 );
                 c.show_text(text).unwrap();
@@ -90,9 +96,10 @@ impl Button {
                 let renderer = CairoRenderer::new(&svg);
                 let y = 0.12 * DFR_HEIGHT as f64;
                 let size = DFR_HEIGHT as f64 - y * 2.0;
-                let x = left_edge + button_width / 2.0 - size / 2.0;
+                let x = button_left_edge + button_width / 2.0 - size / 2.0;
+
                 renderer.render_document(c,
-                    &Rectangle::new(x, y, size, size)
+                    &Rectangle::new(x, y + y_shift, size, size)
                 ).unwrap();
             }
         }
@@ -104,21 +111,23 @@ struct FunctionLayer {
 }
 
 impl FunctionLayer {
-    fn draw(&self, config: &Config, surface: &Surface, active_buttons: &[bool]) {
+    fn draw(&self, config: &Config, surface: &Surface, active_buttons: &[bool], pixel_shift: (f64, f64)) {
         let c = Context::new(&surface).unwrap();
         c.translate(DFR_HEIGHT as f64, 0.0);
         c.rotate((90.0f64).to_radians());
-        let button_width = DFR_WIDTH as f64 / (self.buttons.len() + 1) as f64;
-        let spacing_width = (DFR_WIDTH as f64 - self.buttons.len() as f64 * button_width) / (self.buttons.len() - 1) as f64;
+        let button_width = (DFR_WIDTH as u64 - PIXEL_SHIFT_WIDTH_PX) as f64 / (self.buttons.len() + 1) as f64;
+        let spacing_width = ((DFR_WIDTH as u64 - PIXEL_SHIFT_WIDTH_PX) as f64 - self.buttons.len() as f64 * button_width) / (self.buttons.len() - 1) as f64;
         let radius = 8.0f64;
         let bot = (DFR_HEIGHT as f64) * 0.2;
         let top = (DFR_HEIGHT as f64) * 0.85;
+        let (pixel_shift_x, pixel_shift_y) = pixel_shift;
+
         c.set_source_rgb(0.0, 0.0, 0.0);
         c.paint().unwrap();
         c.select_font_face("sans-serif", FontSlant::Normal, FontWeight::Bold);
         c.set_font_size(32.0);
         for (i, button) in self.buttons.iter().enumerate() {
-            let left_edge = i as f64 * (button_width + spacing_width);
+            let left_edge = i as f64 * (button_width + spacing_width) + pixel_shift_x + (PIXEL_SHIFT_WIDTH_PX / 2) as f64;
             let color = if active_buttons[i] {
                 BUTTON_COLOR_ACTIVE
             } else if config.show_button_outlines {
@@ -163,7 +172,7 @@ impl FunctionLayer {
 
             c.fill().unwrap();
             c.set_source_rgb(1.0, 1.0, 1.0);
-            button.render(&c, left_edge, button_width);
+            button.render(&c, left_edge, button_width, pixel_shift_y);
         }
     }
 }
@@ -222,10 +231,12 @@ fn load_config() -> Config {
     if let Ok(user) = user {
         base.media_layer_default = user.media_layer_default.or(base.media_layer_default);
         base.show_button_outlines = user.show_button_outlines.or(base.show_button_outlines);
+        base.enable_pixel_shift = user.enable_pixel_shift.or(base.enable_pixel_shift);
     };
     Config {
         media_layer_default: base.media_layer_default.unwrap(),
-        show_button_outlines: base.show_button_outlines.unwrap()
+        show_button_outlines: base.show_button_outlines.unwrap(),
+        enable_pixel_shift: base.enable_pixel_shift.unwrap(),
     }
 }
 
@@ -233,6 +244,7 @@ fn main() {
     let mut uinput = UInputHandle::new(OpenOptions::new().write(true).open("/dev/uinput").unwrap());
     let mut backlight = BacklightManager::new();
     let config = load_config();
+    let mut pixel_shift = PixelShiftManager::new();
 
     // drop privileges to input and video group
     let groups = ["input", "video"];
@@ -315,14 +327,31 @@ fn main() {
     let mut digitizer: Option<InputDevice> = None;
     let mut touches = HashMap::new();
     loop {
+        let mut next_timeout_ms = TIMEOUT_MS;
+
+        if config.enable_pixel_shift {
+            let (pixel_shift_needs_redraw, pixel_shift_next_timeout_ms) = pixel_shift.update();
+            if pixel_shift_needs_redraw {
+                needs_redraw = true;
+            }
+            next_timeout_ms = min(next_timeout_ms, pixel_shift_next_timeout_ms);
+        }
+
+
         if needs_redraw {
             needs_redraw = false;
-            layers[active_layer].draw(&config, &surface, &button_states[active_layer]);
+            let shift = if config.enable_pixel_shift {
+                pixel_shift.get()
+            } else {
+                (0.0, 0.0)
+            };
+            layers[active_layer].draw(&config, &surface, &button_states[active_layer], shift);
             let data = surface.data().unwrap();
             drm.map().unwrap().as_mut()[..data.len()].copy_from_slice(&data);
             drm.dirty(&[ClipRect::new(0, 0, DFR_HEIGHT as u16, DFR_WIDTH as u16)]).unwrap();
         }
-        poll(&mut [pollfd_tb, pollfd_main], TIMEOUT_MS).unwrap();
+
+        poll(&mut [pollfd_tb, pollfd_main], next_timeout_ms).unwrap();
         input_tb.dispatch().unwrap();
         input_main.dispatch().unwrap();
         for event in &mut input_tb.clone().chain(input_main.clone()) {

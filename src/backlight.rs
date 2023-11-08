@@ -10,6 +10,11 @@ use input::event::{
 };
 use crate::TIMEOUT_MS;
 
+const BRIGHTNESS_DIM_TIMEOUT: i32 = TIMEOUT_MS * 3; // should be a multiple of TIMEOUT_MS
+const BRIGHTNESS_OFF_TIMEOUT: i32 = TIMEOUT_MS * 6; // should be a multiple of TIMEOUT_MS
+const DEFAULT_BRIGHTNESS: u32 = 128;
+const DIMMED_BRIGHTNESS: u32 = 1;
+
 fn read_attr(path: &Path, attr: &str) -> u32 {
     fs::read_to_string(path.join(attr))
         .expect(&format!("Failed to read {attr}"))
@@ -74,10 +79,10 @@ impl BacklightManager {
         let since_last_active = (Instant::now() - self.last_active).as_millis() as u64;
         let new_bl = if self.lid_state == SwitchState::On {
             0
-        } else if since_last_active < TIMEOUT_MS as u64 {
-            128
-        } else if since_last_active < TIMEOUT_MS as u64 * 2 {
-            1
+        } else if since_last_active < BRIGHTNESS_DIM_TIMEOUT as u64 {
+            DEFAULT_BRIGHTNESS
+        } else if since_last_active < BRIGHTNESS_OFF_TIMEOUT as u64 {
+            DIMMED_BRIGHTNESS
         } else {
             0
         };
