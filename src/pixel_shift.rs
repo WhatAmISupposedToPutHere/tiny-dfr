@@ -5,7 +5,7 @@ use std::{
 use crate::TIMEOUT_MS;
 
 const INTERVAL_MS: i32 = TIMEOUT_MS * 1; // should be a multiple of TIMEOUT_MS
-const PROLONGED_INTERVAL_MS: i32 = TIMEOUT_MS * 1; // should be a multiple of TIMEOUT_MS and more than INTERVAL_MS
+const PROLONGED_INTERVAL_MS: i32 = TIMEOUT_MS * 5; // should be a multiple of TIMEOUT_MS and more than INTERVAL_MS
 const ANIMATION_INTERVAL_MS: i32 = 200; // should be less than TIMEOUT_MS
 const ANIMATION_DURATION_MS: i32 = 4000; // should be a multiple of ANIMATION_INTERVAL_MS
 
@@ -73,7 +73,7 @@ impl PixelShiftManager {
         match self.state {
             ShiftState::Normal => {
                 self.state = ShiftState::ShiftingSubpixel;
-                self.subpixel_progress = self.direction as f64;
+                self.subpixel_progress = if self.direction == 1 { 0.0 } else { 1.0 };
             },
             ShiftState::ShiftingSubpixel => {
                 let shift_by = ANIMATION_INTERVAL_MS as f64 / ANIMATION_DURATION_MS as f64;
