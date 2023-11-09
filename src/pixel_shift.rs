@@ -73,23 +73,24 @@ impl PixelShiftManager {
         match self.state {
             ShiftState::Normal => {
                 self.state = ShiftState::ShiftingSubpixel;
-                self.subpixel_progress = if self.direction == 1 { 0.0 } else { 1.0 };
             },
             ShiftState::ShiftingSubpixel => {
                 let shift_by = ANIMATION_INTERVAL_MS as f64 / ANIMATION_DURATION_MS as f64;
                 self.subpixel_progress += shift_by * self.direction as f64;
-                if self.subpixel_progress <= 0.01 || self.subpixel_progress >= 0.99 {
+                if self.subpixel_progress <= -0.99 || self.subpixel_progress >= 0.99 {
                     self.pixel_progress = (self.direction + self.pixel_progress as i64) as u64;
                     self.state = ShiftState::Normal;
                     self.subpixel_progress = 0.0;
-                }
-                if self.pixel_progress == 0 || self.pixel_progress >= PIXEL_SHIFT_WIDTH_PX {
-                    self.state = ShiftState::WaitingAtEnd;
-                    self.direction = -self.direction;
+                    if self.pixel_progress == 0 || self.pixel_progress >= PIXEL_SHIFT_WIDTH_PX {
+                        self.state = ShiftState::WaitingAtEnd;
+                        self.direction = -self.direction;
+                        dbg!(self.direction);
+                    }
                 }
             },
             ShiftState::WaitingAtEnd => {
                 self.state = ShiftState::Normal;
+                self.subpixel_progress = 0.0;
             }
         }
         (true, wait_for_state(self.state))
@@ -97,7 +98,10 @@ impl PixelShiftManager {
 
     pub fn get(&self) -> (f64, f64) {
         let x_progress = self.pixel_progress as f64 + self.subpixel_progress;
-        let y_progress = (x_progress + self.y_constant) % PIXEL_SHIFT_HEIGHT_PX as f64;
+        let mut y_progress = (x_progress + self.y_constant) % (PIXEL_SHIFT_HEIGHT_PX * 2) as f64;
+        if y_progress > PIXEL_SHIFT_HEIGHT_PX as f64 {
+            y_progress = (PIXEL_SHIFT_HEIGHT_PX * 2) as f64 - y_progress;
+        }
         (x_progress - (PIXEL_SHIFT_WIDTH_PX / 2) as f64, y_progress - (PIXEL_SHIFT_HEIGHT_PX / 2) as f64)
     }
 }
