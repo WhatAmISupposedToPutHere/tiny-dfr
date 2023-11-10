@@ -51,12 +51,14 @@ const TIMEOUT_MS: i32 = 10 * 1000;
 #[derive(Deserialize)]
 #[serde(rename_all = "PascalCase")]
 struct ConfigProxy {
+    use_bold_text: Option<bool>,
     media_layer_default: Option<bool>,
     show_button_outlines: Option<bool>,
     enable_pixel_shift: Option<bool>
 }
 
 struct Config {
+    use_bold_text: bool,
     media_layer_default: bool,
     show_button_outlines: bool,
     enable_pixel_shift: bool
@@ -124,7 +126,7 @@ impl FunctionLayer {
 
         c.set_source_rgb(0.0, 0.0, 0.0);
         c.paint().unwrap();
-        c.select_font_face("sans-serif", FontSlant::Normal, FontWeight::Bold);
+        c.select_font_face("sans-serif", FontSlant::Normal, if config.use_bold_text { FontWeight::Bold } else { FontWeight::Normal });
         c.set_font_size(32.0);
         for (i, button) in self.buttons.iter().enumerate() {
             let left_edge = (i as f64 * (button_width + BUTTON_SPACING_PX as f64)).floor() + pixel_shift_x + (PIXEL_SHIFT_WIDTH_PX / 2) as f64;
@@ -228,11 +230,13 @@ fn load_config() -> Config {
     let user = read_to_string("/etc/tiny-dfr/config.toml").map_err::<Error, _>(|e| e.into())
         .and_then(|r| Ok(toml::from_str::<ConfigProxy>(&r)?));
     if let Ok(user) = user {
+        base.use_bold_text = user.use_bold_text.or(base.use_bold_text);
         base.media_layer_default = user.media_layer_default.or(base.media_layer_default);
         base.show_button_outlines = user.show_button_outlines.or(base.show_button_outlines);
         base.enable_pixel_shift = user.enable_pixel_shift.or(base.enable_pixel_shift);
     };
     Config {
+        use_bold_text: base.use_bold_text.unwrap(),
         media_layer_default: base.media_layer_default.unwrap(),
         show_button_outlines: base.show_button_outlines.unwrap(),
         enable_pixel_shift: base.enable_pixel_shift.unwrap(),

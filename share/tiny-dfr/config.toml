@@ -2,6 +2,9 @@
 # copy it to /etc/tiny-dfr/config.toml and edit that copy.
 # The daemon will merge those two files, giving preference to the one in /etc
 
+# Set this to false if you want the text to be thinner
+UseBoldText = true
+
 # F{number} keys are shown when Fn is not pressed by default.
 # Set this to true if you want the media keys to be shown without Fn pressed
 MediaLayerDefault = false
