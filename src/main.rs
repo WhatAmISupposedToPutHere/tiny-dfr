@@ -116,7 +116,8 @@ impl FunctionLayer {
         let c = Context::new(&surface).unwrap();
         c.translate(DFR_HEIGHT as f64, 0.0);
         c.rotate((90.0f64).to_radians());
-        let button_width = ((DFR_WIDTH - PIXEL_SHIFT_WIDTH_PX as i32) - (BUTTON_SPACING_PX * (self.buttons.len() - 1) as i32)) as f64 / self.buttons.len() as f64;
+        let pixel_shift_width = if config.enable_pixel_shift { PIXEL_SHIFT_WIDTH_PX } else { 0 };
+        let button_width = ((DFR_WIDTH - pixel_shift_width as i32) - (BUTTON_SPACING_PX * (self.buttons.len() - 1) as i32)) as f64 / self.buttons.len() as f64;
         let radius = 8.0f64;
         let bot = (DFR_HEIGHT as f64) * 0.2;
         let top = (DFR_HEIGHT as f64) * 0.85;
@@ -127,7 +128,7 @@ impl FunctionLayer {
         c.select_font_face("sans-serif", FontSlant::Normal, FontWeight::Bold);
         c.set_font_size(32.0);
         for (i, button) in self.buttons.iter().enumerate() {
-            let left_edge = (i as f64 * (button_width + BUTTON_SPACING_PX as f64)).floor() + pixel_shift_x + (PIXEL_SHIFT_WIDTH_PX / 2) as f64;
+            let left_edge = (i as f64 * (button_width + BUTTON_SPACING_PX as f64)).floor() + pixel_shift_x + (pixel_shift_width / 2) as f64;
             let color = if active_buttons[i] {
                 BUTTON_COLOR_ACTIVE
             } else if config.show_button_outlines {
