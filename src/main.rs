@@ -41,7 +41,8 @@ use pixel_shift::PIXEL_SHIFT_WIDTH_PX;
 use fonts::{FontConfig, Pattern};
 
 const DFR_WIDTH: i32 = 2008;
-const DFR_HEIGHT: i32 = 64;
+const DFR_HEIGHT: i32 = 60;
+const DFR_STRIDE: i32 = 64;
 const BUTTON_SPACING_PX: i32 = 16;
 const BUTTON_COLOR_INACTIVE: f64 = 0.200;
 const BUTTON_COLOR_ACTIVE: f64 = 0.400;
@@ -121,7 +122,7 @@ impl FunctionLayer {
         let pixel_shift_width = if config.enable_pixel_shift { PIXEL_SHIFT_WIDTH_PX } else { 0 };
         let button_width = ((DFR_WIDTH - pixel_shift_width as i32) - (BUTTON_SPACING_PX * (self.buttons.len() - 1) as i32)) as f64 / self.buttons.len() as f64;
         let radius = 8.0f64;
-        let bot = (DFR_HEIGHT as f64) * 0.2;
+        let bot = (DFR_HEIGHT as f64) * 0.15;
         let top = (DFR_HEIGHT as f64) * 0.85;
         let (pixel_shift_x, pixel_shift_y) = pixel_shift;
 
@@ -271,7 +272,7 @@ fn main() {
         .apply()
         .unwrap_or_else(|e| { panic!("Failed to drop privileges: {}", e) });
 
-    let mut surface = ImageSurface::create(Format::ARgb32, DFR_HEIGHT, DFR_WIDTH).unwrap();
+    let mut surface = ImageSurface::create(Format::ARgb32, DFR_STRIDE, DFR_WIDTH).unwrap();
     let mut active_layer = 0;
     let fkey_layer = FunctionLayer {
         buttons: vec![
