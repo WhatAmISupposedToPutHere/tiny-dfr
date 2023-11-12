@@ -3,7 +3,7 @@ The most basic dynamic function row daemon possible
 
 
 ## Dependencies
-pango, libinput, uinput enabled in kernel config
+cairo, libinput, freetype, fontconfig, uinput enabled in kernel config
 
 ## License
 

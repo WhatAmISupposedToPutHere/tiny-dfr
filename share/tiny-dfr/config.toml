@@ -14,3 +14,12 @@ ShowButtonOutlines = true
 # In theory this helps with screen longevity, but macos does not bother doint it
 # Disabling ShowButtonOutlines will make this effect less noticeable to the eye
 EnablePixelShift = false
+
+# Set this to the fontconfig pattern to be used to pick a font for text labels
+# Some examples are:
+# "" - default regular sans-serif font
+# ":bold" - default regular sans-serif font
+# For full reference on accepted values see the fontconfig user guide,
+# section "Font Names"
+# https://www.freedesktop.org/software/fontconfig/fontconfig-user.html
+FontTemplate = ":bold"

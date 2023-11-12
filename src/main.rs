@@ -9,10 +9,7 @@ use std::{
     cmp::min
 };
 use std::os::fd::AsFd;
-use cairo::{
-    ImageSurface, Format, Context, Surface,
-    FontSlant, FontWeight, Rectangle
-};
+use cairo::{ImageSurface, Format, Context, Surface, Rectangle, FontFace};
 use rsvg::{Loader, CairoRenderer, SvgHandle};
 use drm::control::ClipRect;
 use anyhow::{Error, Result};
@@ -30,15 +27,18 @@ use input_linux_sys::{uinput_setup, input_id, timeval, input_event};
 use nix::poll::{poll, PollFd, PollFlags};
 use privdrop::PrivDrop;
 use serde::Deserialize;
+use freetype::Library as FtLibrary;
 
 mod backlight;
 mod display;
 mod pixel_shift;
+mod fonts;
 
 use backlight::BacklightManager;
 use display::DrmBackend;
 use pixel_shift::PixelShiftManager;
 use pixel_shift::PIXEL_SHIFT_WIDTH_PX;
+use fonts::{FontConfig, Pattern};
 
 const DFR_WIDTH: i32 = 2008;
 const DFR_HEIGHT: i32 = 64;
@@ -53,13 +53,15 @@ const TIMEOUT_MS: i32 = 10 * 1000;
 struct ConfigProxy {
     media_layer_default: Option<bool>,
     show_button_outlines: Option<bool>,
-    enable_pixel_shift: Option<bool>
+    enable_pixel_shift: Option<bool>,
+    font_template: Option<String>
 }
 
 struct Config {
     media_layer_default: bool,
     show_button_outlines: bool,
-    enable_pixel_shift: bool
+    enable_pixel_shift: bool,
+    font_face: FontFace
 }
 
 enum ButtonImage {
@@ -124,7 +126,7 @@ impl FunctionLayer {
 
         c.set_source_rgb(0.0, 0.0, 0.0);
         c.paint().unwrap();
-        c.select_font_face("sans-serif", FontSlant::Normal, FontWeight::Bold);
+        c.set_font_face(&config.font_face);
         c.set_font_size(32.0);
         for (i, button) in self.buttons.iter().enumerate() {
             let left_edge = (i as f64 * (button_width + BUTTON_SPACING_PX as f64)).floor() + pixel_shift_x + (PIXEL_SHIFT_WIDTH_PX / 2) as f64;
@@ -223,6 +225,18 @@ fn toggle_key<F>(uinput: &mut UInputHandle<F>, code: Key, value: i32) where F: A
     emit(uinput, EventKind::Synchronize, SynchronizeKind::Report as u16, 0);
 }
 
+fn load_font(name: &str) -> FontFace {
+    let fontconfig = FontConfig::new();
+    let mut pattern = Pattern::new(name);
+    fontconfig.perform_substitutions(&mut pattern);
+    let pat_match = fontconfig.match_pattern(&pattern);
+    let file_name = pat_match.get_file_name();
+    let file_idx = pat_match.get_font_index();
+    let ft_library = FtLibrary::init().unwrap();
+    let face = ft_library.new_face(file_name, file_idx).unwrap();
+    FontFace::create_from_ft(&face).unwrap()
+}
+
 fn load_config() -> Config {
     let mut base = toml::from_str::<ConfigProxy>(&read_to_string("/usr/share/tiny-dfr/config.toml").unwrap()).unwrap();
     let user = read_to_string("/etc/tiny-dfr/config.toml").map_err::<Error, _>(|e| e.into())
@@ -231,11 +245,13 @@ fn load_config() -> Config {
         base.media_layer_default = user.media_layer_default.or(base.media_layer_default);
         base.show_button_outlines = user.show_button_outlines.or(base.show_button_outlines);
         base.enable_pixel_shift = user.enable_pixel_shift.or(base.enable_pixel_shift);
+        base.font_template = user.font_template.or(base.font_template);
     };
     Config {
         media_layer_default: base.media_layer_default.unwrap(),
         show_button_outlines: base.show_button_outlines.unwrap(),
         enable_pixel_shift: base.enable_pixel_shift.unwrap(),
+        font_face: load_font(&base.font_template.unwrap())
     }
 }
 
