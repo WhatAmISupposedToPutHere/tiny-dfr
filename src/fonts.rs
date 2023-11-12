@@ -67,7 +67,7 @@ impl Pattern {
         }
     }
     pub fn get_file_name(&self) -> &str {
-        let name = b"file\0";
+        let name = CString::new("file").unwrap();
         unsafe {
             let mut file_name = ptr::null();
             FcPatternGetString(self.pattern, name.as_ptr(), 0, &mut file_name);
@@ -75,7 +75,7 @@ impl Pattern {
         }
     }
     pub fn get_font_index(&self) -> isize {
-        let name = b"index\0";
+        let name = CString::new("index").unwrap();
         unsafe {
             let mut index = 0;
             FcPatternGetInteger(self.pattern, name.as_ptr(), 0, &mut index);
