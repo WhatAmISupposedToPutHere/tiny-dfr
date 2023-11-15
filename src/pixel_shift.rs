@@ -84,7 +84,6 @@ impl PixelShiftManager {
                     if self.pixel_progress == 0 || self.pixel_progress >= PIXEL_SHIFT_WIDTH_PX {
                         self.state = ShiftState::WaitingAtEnd;
                         self.direction = -self.direction;
-                        dbg!(self.direction);
                     }
                 }
             },
