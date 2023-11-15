@@ -618,6 +618,7 @@ checksum = "6f403224ea808abe6182696e3a36d9875c0e942ba7c99239f9ef545b96e35606"
 dependencies = [
  "input-linux-sys",
  "nix 0.26.4",
+ "serde",
 ]
 
 [[package]]

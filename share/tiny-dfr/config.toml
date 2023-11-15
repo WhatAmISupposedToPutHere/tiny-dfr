@@ -23,3 +23,49 @@ EnablePixelShift = false
 # section "Font Names"
 # https://www.freedesktop.org/software/fontconfig/fontconfig-user.html
 FontTemplate = ":bold"
+
+# This key defines the contents of the primary layer
+# (the one with F{number} keys)
+# You can change the individual buttons, add, or remove them
+# Any number of keys that is greater than 0 is allowed
+# however rendering will start to break around 24 keys
+PrimaryLayerKeys = [
+    # Action defines the key code to send when the button is pressed
+    # Text defines the button label
+    # Svg specifies the icon to be used for the button.
+    # Do not include the .svg extension in the file name.
+    # Svgs are looked up in /etc/tiny-dfr first and then in /usr/share/tiny-dfr
+    # Only one of Text or Svg is allowed,
+    # if both are present, the behavior is undefined.
+    # For the list of supported key codes see
+    # https://docs.rs/input-linux/latest/input_linux/enum.Key.html
+    { Text = "F1",  Action = "F1"  },
+    { Text = "F2",  Action = "F2"  },
+    { Text = "F3",  Action = "F3"  },
+    { Text = "F4",  Action = "F4"  },
+    { Text = "F5",  Action = "F5"  },
+    { Text = "F6",  Action = "F6"  },
+    { Text = "F7",  Action = "F7"  },
+    { Text = "F8",  Action = "F8"  },
+    { Text = "F9",  Action = "F9"  },
+    { Text = "F10", Action = "F10" },
+    { Text = "F11", Action = "F11" },
+    { Text = "F12", Action = "F12" }
+]
+
+# This key defines the contents of the media key layer
+MediaLayerKeys = [
+    { Svg = "brightness_low",  Action = "BrightnessDown" },
+    { Svg = "brightness_high", Action = "BrightnessUp"   },
+    { Svg = "mic_off",         Action = "MicMute"        },
+    { Svg = "search",          Action = "Search"         },
+    { Svg = "backlight_low",   Action = "IllumDown"      },
+    { Svg = "backlight_high",  Action = "IllumUp"        },
+    { Svg = "fast_rewind",     Action = "PreviousSong"   },
+    { Svg = "play_pause",      Action = "PlayPause"      },
+    { Svg = "fast_forward",    Action = "NextSong"       },
+    { Svg = "volume_off",      Action = "Mute"           },
+    { Svg = "volume_down",     Action = "VolumeDown"     },
+    { Svg = "volume_up",       Action = "VolumeUp"       }
+]
+

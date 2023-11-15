@@ -6,7 +6,8 @@ use std::{
     },
     path::Path,
     collections::HashMap,
-    cmp::min
+    cmp::min,
+    mem
 };
 use std::os::fd::AsFd;
 use cairo::{ImageSurface, Format, Context, Surface, Rectangle, FontFace};
@@ -55,18 +56,28 @@ struct ConfigProxy {
     media_layer_default: Option<bool>,
     show_button_outlines: Option<bool>,
     enable_pixel_shift: Option<bool>,
-    font_template: Option<String>
+    font_template: Option<String>,
+    primary_layer_keys: Option<Vec<ButtonConfig>>,
+    media_layer_keys: Option<Vec<ButtonConfig>>
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct ButtonConfig {
+    svg: Option<String>,
+    text: Option<String>,
+    action: Key
 }
 
 struct Config {
-    media_layer_default: bool,
     show_button_outlines: bool,
     enable_pixel_shift: bool,
-    font_face: FontFace
+    font_face: FontFace,
+    layers: [FunctionLayer; 2]
 }
 
 enum ButtonImage {
-    Text(&'static str),
+    Text(String),
     Svg(SvgHandle)
 }
 
@@ -78,7 +89,16 @@ struct Button {
 }
 
 impl Button {
-    fn new_text(text: &'static str, action: Key) -> Button {
+    fn with_config(cfg: ButtonConfig) -> Button {
+        if let Some(text) = cfg.text {
+            Button::new_text(text, cfg.action)
+        } else if let Some(svg) = cfg.svg {
+            Button::new_svg(&svg, cfg.action)
+        } else {
+            panic!("Invalid config, a button must have either Text or Svg")
+        }
+    }
+    fn new_text(text: String, action: Key) -> Button {
         Button {
             action,
             active: false,
@@ -86,8 +106,10 @@ impl Button {
             image: ButtonImage::Text(text)
         }
     }
-    fn new_svg(path: &'static str, action: Key) -> Button {
-        let svg = Loader::new().read_path(format!("/usr/share/tiny-dfr/{}.svg", path)).unwrap();
+    fn new_svg(path: &str, action: Key) -> Button {
+        let svg = Loader::new().read_path(format!("/etc/tiny-dfr/{}.svg", path)).or_else(|_| {
+            Loader::new().read_path(format!("/usr/share/tiny-dfr/{}.svg", path))
+        }).unwrap();
         Button {
             action,
             active: false,
@@ -126,11 +148,20 @@ impl Button {
     }
 }
 
+#[derive(Default)]
 struct FunctionLayer {
     buttons: Vec<Button>
 }
 
 impl FunctionLayer {
+    fn with_config(cfg: Vec<ButtonConfig>) -> FunctionLayer {
+        if cfg.is_empty() {
+            panic!("Invalid configuration, layer has 0 buttons");
+        }
+        FunctionLayer {
+            buttons: cfg.into_iter().map(Button::with_config).collect()
+        }
+    }
     fn draw(&mut self, config: &Config, surface: &Surface, pixel_shift: (f64, f64), complete_redraw: bool) -> Vec<ClipRect> {
         let c = Context::new(&surface).unwrap();
         let mut modified_regions = if complete_redraw {
@@ -293,19 +324,24 @@ fn load_config() -> Config {
         base.show_button_outlines = user.show_button_outlines.or(base.show_button_outlines);
         base.enable_pixel_shift = user.enable_pixel_shift.or(base.enable_pixel_shift);
         base.font_template = user.font_template.or(base.font_template);
+        base.media_layer_keys = user.media_layer_keys.or(base.media_layer_keys);
+        base.primary_layer_keys = user.primary_layer_keys.or(base.primary_layer_keys);
     };
+    let media_layer = FunctionLayer::with_config(base.media_layer_keys.unwrap());
+    let fkey_layer = FunctionLayer::with_config(base.primary_layer_keys.unwrap());
+    let layers = if base.media_layer_default.unwrap(){ [media_layer, fkey_layer] } else { [fkey_layer, media_layer] };
     Config {
-        media_layer_default: base.media_layer_default.unwrap(),
         show_button_outlines: base.show_button_outlines.unwrap(),
         enable_pixel_shift: base.enable_pixel_shift.unwrap(),
-        font_face: load_font(&base.font_template.unwrap())
+        font_face: load_font(&base.font_template.unwrap()),
+        layers
     }
 }
 
 fn main() {
     let mut uinput = UInputHandle::new(OpenOptions::new().write(true).open("/dev/uinput").unwrap());
     let mut backlight = BacklightManager::new();
-    let config = load_config();
+    let mut cfg = load_config();
     let mut pixel_shift = PixelShiftManager::new();
 
     // drop privileges to input and video group
@@ -319,39 +355,6 @@ fn main() {
 
     let mut surface = ImageSurface::create(Format::ARgb32, DFR_STRIDE, DFR_WIDTH).unwrap();
     let mut active_layer = 0;
-    let fkey_layer = FunctionLayer {
-        buttons: vec![
-            Button::new_text("F1", Key::F1),
-            Button::new_text("F2", Key::F2),
-            Button::new_text("F3", Key::F3),
-            Button::new_text("F4", Key::F4),
-            Button::new_text("F5", Key::F5),
-            Button::new_text("F6", Key::F6),
-            Button::new_text("F7", Key::F7),
-            Button::new_text("F8", Key::F8),
-            Button::new_text("F9", Key::F9),
-            Button::new_text("F10", Key::F10),
-            Button::new_text("F11", Key::F11),
-            Button::new_text("F12", Key::F12)
-        ]
-    };
-    let media_layer = FunctionLayer {
-        buttons: vec![
-            Button::new_svg("brightness_low", Key::BrightnessDown),
-            Button::new_svg("brightness_high", Key::BrightnessUp),
-            Button::new_svg("mic_off", Key::MicMute),
-            Button::new_svg("search", Key::Search),
-            Button::new_svg("backlight_low", Key::IllumDown),
-            Button::new_svg("backlight_high", Key::IllumUp),
-            Button::new_svg("fast_rewind", Key::PreviousSong),
-            Button::new_svg("play_pause", Key::PlayPause),
-            Button::new_svg("fast_forward", Key::NextSong),
-            Button::new_svg("volume_off", Key::Mute),
-            Button::new_svg("volume_down", Key::VolumeDown),
-            Button::new_svg("volume_up", Key::VolumeUp)
-        ]
-    };
-    let mut layers = if config.media_layer_default { [media_layer, fkey_layer] } else { [fkey_layer, media_layer] };
     let mut needs_complete_redraw = true;
     let mut drm = DrmBackend::open_card().unwrap();
     let fb_info = drm.fb_info().unwrap();
@@ -365,6 +368,7 @@ fn main() {
     let pollfd_tb = PollFd::new(&fd_tb, PollFlags::POLLIN);
     let pollfd_main = PollFd::new(&fd_main, PollFlags::POLLIN);
     uinput.set_evbit(EventKind::Key).unwrap();
+    let mut layers = mem::take(&mut cfg.layers);
     for layer in &layers {
         for button in &layer.buttons {
             uinput.set_keybit(button.action).unwrap();
@@ -392,7 +396,7 @@ fn main() {
     loop {
         let mut next_timeout_ms = TIMEOUT_MS;
 
-        if config.enable_pixel_shift {
+        if cfg.enable_pixel_shift {
             let (pixel_shift_needs_redraw, pixel_shift_next_timeout_ms) = pixel_shift.update();
             if pixel_shift_needs_redraw {
                 needs_complete_redraw = true;
@@ -401,12 +405,12 @@ fn main() {
         }
 
         if needs_complete_redraw || layers[active_layer].buttons.iter().any(|b| b.changed) {
-            let shift = if config.enable_pixel_shift {
+            let shift = if cfg.enable_pixel_shift {
                 pixel_shift.get()
             } else {
                 (0.0, 0.0)
             };
-            let clips = layers[active_layer].draw(&config, &surface, shift, needs_complete_redraw);
+            let clips = layers[active_layer].draw(&cfg, &surface, shift, needs_complete_redraw);
             let data = surface.data().unwrap();
             drm.map().unwrap().as_mut()[..data.len()].copy_from_slice(&data);
             drm.dirty(&clips).unwrap();

@@ -16,7 +16,7 @@ drm = "0.10.0"
 anyhow = "1"
 input = "0.8"
 libc = "0.2"
-input-linux = "0.6"
+input-linux = { version = "0.6", features = ["serde"] }
 input-linux-sys = "0.8"
 nix = { version = "0.27", features = ["poll"] }
 privdrop = "0.5.3"
