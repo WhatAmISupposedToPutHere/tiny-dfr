@@ -357,7 +357,6 @@ fn main() {
     let mut active_layer = 0;
     let mut needs_complete_redraw = true;
     let mut drm = DrmBackend::open_card().unwrap();
-    let fb_info = drm.fb_info().unwrap();
 
     let mut input_tb = Libinput::new_with_udev(Interface);
     let mut input_main = Libinput::new_with_udev(Interface);
