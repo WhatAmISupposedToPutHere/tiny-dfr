@@ -18,7 +18,7 @@ input = "0.8"
 libc = "0.2"
 input-linux = { version = "0.6", features = ["serde"] }
 input-linux-sys = "0.8"
-nix = { version = "0.27", features = ["poll"] }
+nix = { version = "0.27", features = ["poll", "signal"] }
 privdrop = "0.5.3"
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"

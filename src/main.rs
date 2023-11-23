@@ -7,9 +7,11 @@ use std::{
     path::Path,
     collections::HashMap,
     cmp::min,
-    mem
+    mem,
+    panic
 };
 use std::os::fd::AsFd;
+use std::panic::AssertUnwindSafe;
 use cairo::{ImageSurface, Format, Context, Surface, Rectangle, FontFace};
 use rsvg::{Loader, CairoRenderer, SvgHandle};
 use drm::control::ClipRect;
@@ -25,7 +27,10 @@ use input::{
 use libc::{O_ACCMODE, O_RDONLY, O_RDWR, O_WRONLY, c_char};
 use input_linux::{uinput::UInputHandle, EventKind, Key, SynchronizeKind};
 use input_linux_sys::{uinput_setup, input_id, timeval, input_event};
-use nix::poll::{poll, PollFd, PollFlags};
+use nix::{
+    poll::{poll, PollFd, PollFlags},
+    sys::signal::{Signal, SigSet}
+};
 use privdrop::PrivDrop;
 use serde::Deserialize;
 use freetype::Library as FtLibrary;
@@ -339,6 +344,33 @@ fn load_config() -> Config {
 }
 
 fn main() {
+    let mut drm = DrmBackend::open_card().unwrap();
+    let _ = panic::catch_unwind(AssertUnwindSafe(|| {
+        real_main(&mut drm)
+    }));
+    let crash_bitmap = include_bytes!("crash_bitmap.raw");
+    let mut map = drm.map().unwrap();
+    let data = map.as_mut();
+    let mut wptr = 0;
+    for byte in crash_bitmap {
+        for i in 0..8 {
+            let bit = ((byte >> i) & 0x1) == 0;
+            let color = if bit { 0xFF } else { 0x0 };
+            data[wptr] = color;
+            data[wptr + 1] = color;
+            data[wptr + 2] = color;
+            data[wptr + 3] = color;
+            wptr += 4;
+        }
+    }
+    drop(map);
+    drm.dirty(&[ClipRect::new(0, 0, DFR_HEIGHT as u16, DFR_WIDTH as u16)]).unwrap();
+    let mut sigset = SigSet::empty();
+    sigset.add(Signal::SIGTERM);
+    sigset.wait().unwrap();
+}
+
+fn real_main(drm: &mut DrmBackend) {
     let mut uinput = UInputHandle::new(OpenOptions::new().write(true).open("/dev/uinput").unwrap());
     let mut backlight = BacklightManager::new();
     let mut cfg = load_config();
@@ -356,7 +388,6 @@ fn main() {
     let mut surface = ImageSurface::create(Format::ARgb32, DFR_STRIDE, DFR_WIDTH).unwrap();
     let mut active_layer = 0;
     let mut needs_complete_redraw = true;
-    let mut drm = DrmBackend::open_card().unwrap();
 
     let mut input_tb = Libinput::new_with_udev(Interface);
     let mut input_main = Libinput::new_with_udev(Interface);
