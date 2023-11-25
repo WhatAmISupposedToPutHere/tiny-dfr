@@ -1,18 +1,14 @@
 use std::{
-    fs::{File, OpenOptions, read_to_string, self},
+    fs::{File, OpenOptions, read_to_string},
     os::{
-        fd::AsRawFd,
+        fd::{AsRawFd, AsFd},
         unix::{io::OwnedFd, fs::OpenOptionsExt}
     },
     path::Path,
-    time::SystemTime,
     collections::HashMap,
     cmp::min,
-    mem,
-    panic
+    panic::{self, AssertUnwindSafe}
 };
-use std::os::fd::AsFd;
-use std::panic::AssertUnwindSafe;
 use cairo::{ImageSurface, Format, Context, Surface, Rectangle, FontFace};
 use rsvg::{Loader, CairoRenderer, SvgHandle};
 use drm::control::ClipRect;
@@ -30,7 +26,11 @@ use input_linux::{uinput::UInputHandle, EventKind, Key, SynchronizeKind};
 use input_linux_sys::{uinput_setup, input_id, timeval, input_event};
 use nix::{
     poll::{poll, PollFd, PollFlags},
-    sys::signal::{Signal, SigSet}
+    sys::{
+        signal::{Signal, SigSet},
+        inotify::{AddWatchFlags, InitFlags, Inotify}
+    },
+    errno::Errno
 };
 use privdrop::PrivDrop;
 use serde::Deserialize;
@@ -43,8 +43,7 @@ mod fonts;
 
 use backlight::BacklightManager;
 use display::DrmBackend;
-use pixel_shift::PixelShiftManager;
-use pixel_shift::PIXEL_SHIFT_WIDTH_PX;
+use pixel_shift::{PixelShiftManager, PIXEL_SHIFT_WIDTH_PX};
 use fonts::{FontConfig, Pattern};
 
 const DFR_WIDTH: i32 = 2008;
@@ -55,6 +54,7 @@ const BUTTON_COLOR_INACTIVE: f64 = 0.200;
 const BUTTON_COLOR_ACTIVE: f64 = 0.400;
 const ICON_SIZE: i32 = 48;
 const TIMEOUT_MS: i32 = 10 * 1000;
+const USER_CFG_PATH: &'static str = "/etc/tiny-dfr/config.toml";
 
 #[derive(Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -79,7 +79,6 @@ struct Config {
     show_button_outlines: bool,
     enable_pixel_shift: bool,
     font_face: FontFace,
-    layers: [FunctionLayer; 2]
 }
 
 enum ButtonImage {
@@ -321,9 +320,9 @@ fn load_font(name: &str) -> FontFace {
     FontFace::create_from_ft(&face).unwrap()
 }
 
-fn load_config() -> Config {
+fn load_config() -> (Config, [FunctionLayer; 2]) {
     let mut base = toml::from_str::<ConfigProxy>(&read_to_string("/usr/share/tiny-dfr/config.toml").unwrap()).unwrap();
-    let user = read_to_string("/etc/tiny-dfr/config.toml").map_err::<Error, _>(|e| e.into())
+    let user = read_to_string(USER_CFG_PATH).map_err::<Error, _>(|e| e.into())
         .and_then(|r| Ok(toml::from_str::<ConfigProxy>(&r)?));
     if let Ok(user) = user {
         base.media_layer_default = user.media_layer_default.or(base.media_layer_default);
@@ -336,19 +335,12 @@ fn load_config() -> Config {
     let media_layer = FunctionLayer::with_config(base.media_layer_keys.unwrap());
     let fkey_layer = FunctionLayer::with_config(base.primary_layer_keys.unwrap());
     let layers = if base.media_layer_default.unwrap(){ [media_layer, fkey_layer] } else { [fkey_layer, media_layer] };
-    Config {
+    let cfg = Config {
         show_button_outlines: base.show_button_outlines.unwrap(),
         enable_pixel_shift: base.enable_pixel_shift.unwrap(),
         font_face: load_font(&base.font_template.unwrap()),
-        layers
-    }
-}
-
-fn get_file_modified_time(path: &str) -> Option<SystemTime> {
-    fs::metadata(path)
-        .ok()
-        .map(|metadata| metadata.modified().ok())
-        .flatten()
+    };
+    (cfg, layers)
 }
 
 fn main() {
@@ -381,7 +373,7 @@ fn main() {
 fn real_main(drm: &mut DrmBackend) {
     let mut uinput = UInputHandle::new(OpenOptions::new().write(true).open("/dev/uinput").unwrap());
     let mut backlight = BacklightManager::new();
-    let mut cfg = load_config();
+    let (mut cfg, mut layers) = load_config();
     let mut pixel_shift = PixelShiftManager::new();
 
     // drop privileges to input and video group
@@ -406,14 +398,15 @@ fn real_main(drm: &mut DrmBackend) {
     let pollfd_tb = PollFd::new(&fd_tb, PollFlags::POLLIN);
     let pollfd_main = PollFd::new(&fd_main, PollFlags::POLLIN);
     uinput.set_evbit(EventKind::Key).unwrap();
-    let config_path = "/etc/tiny-dfr/config.toml";
-    let mut last_modified_time = get_file_modified_time(config_path);
-    let mut layers = mem::take(&mut cfg.layers);
     for layer in &layers {
         for button in &layer.buttons {
             uinput.set_keybit(button.action).unwrap();
         }
     }
+    let inotify_fd = Inotify::init(InitFlags::IN_NONBLOCK).unwrap();
+    let flags = AddWatchFlags::IN_MOVED_TO | AddWatchFlags::IN_CLOSE;
+    let cfg_watch_desc = inotify_fd.add_watch(USER_CFG_PATH, flags).unwrap();
+    let pollfd_notify = PollFd::new(&inotify_fd, PollFlags::POLLIN);
     let mut dev_name_c = [0 as c_char; 80];
     let dev_name = "Dynamic Function Row Virtual Input Device".as_bytes();
     for i in 0..dev_name.len() {
@@ -434,17 +427,21 @@ fn real_main(drm: &mut DrmBackend) {
     let mut digitizer: Option<InputDevice> = None;
     let mut touches = HashMap::new();
     loop {
-        let current_modified_time = get_file_modified_time(config_path);
-        if current_modified_time != last_modified_time {
-            cfg = load_config();
-            layers = mem::take(&mut cfg.layers);
+        let evts = match inotify_fd.read_events() {
+            Ok(e) => e,
+            Err(Errno::EAGAIN) => Vec::new(),
+            r => r.unwrap(),
+        };
+        for evt in evts {
+            if evt.wd != cfg_watch_desc {
+                continue
+            }
+            (cfg, layers) = load_config();
             active_layer = 0;
-            last_modified_time = current_modified_time;
             needs_complete_redraw = true;
         }
 
         let mut next_timeout_ms = TIMEOUT_MS;
-
         if cfg.enable_pixel_shift {
             let (pixel_shift_needs_redraw, pixel_shift_next_timeout_ms) = pixel_shift.update();
             if pixel_shift_needs_redraw {
@@ -466,7 +463,7 @@ fn real_main(drm: &mut DrmBackend) {
             needs_complete_redraw = false;
         }
 
-        poll(&mut [pollfd_tb, pollfd_main], next_timeout_ms).unwrap();
+        poll(&mut [pollfd_tb, pollfd_main, pollfd_notify], next_timeout_ms).unwrap();
         input_tb.dispatch().unwrap();
         input_main.dispatch().unwrap();
         for event in &mut input_tb.clone().chain(input_main.clone()) {
