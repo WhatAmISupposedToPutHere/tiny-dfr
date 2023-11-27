@@ -11,7 +11,7 @@ MediaLayerDefault = false
 ShowButtonOutlines = true
 
 # Set this to true to slowly shift the entire screen contents.
-# In theory this helps with screen longevity, but macos does not bother doint it
+# In theory this helps with screen longevity, but macos does not bother doing it
 # Disabling ShowButtonOutlines will make this effect less noticeable to the eye
 EnablePixelShift = false
 

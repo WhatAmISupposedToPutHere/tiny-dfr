@@ -28,7 +28,7 @@ use nix::{
     poll::{poll, PollFd, PollFlags},
     sys::{
         signal::{Signal, SigSet},
-        inotify::{AddWatchFlags, InitFlags, Inotify}
+        inotify::{AddWatchFlags, InitFlags, Inotify, WatchDescriptor}
     },
     errno::Errno
 };
@@ -370,6 +370,11 @@ fn main() {
     sigset.wait().unwrap();
 }
 
+fn arm_inotify(inotify_fd: &Inotify) -> WatchDescriptor {
+    let flags = AddWatchFlags::IN_MOVED_TO | AddWatchFlags::IN_CLOSE | AddWatchFlags::IN_ONESHOT;
+    inotify_fd.add_watch(USER_CFG_PATH, flags).unwrap()
+}
+
 fn real_main(drm: &mut DrmBackend) {
     let mut uinput = UInputHandle::new(OpenOptions::new().write(true).open("/dev/uinput").unwrap());
     let mut backlight = BacklightManager::new();
@@ -404,8 +409,7 @@ fn real_main(drm: &mut DrmBackend) {
         }
     }
     let inotify_fd = Inotify::init(InitFlags::IN_NONBLOCK).unwrap();
-    let flags = AddWatchFlags::IN_MOVED_TO | AddWatchFlags::IN_CLOSE;
-    let cfg_watch_desc = inotify_fd.add_watch(USER_CFG_PATH, flags).unwrap();
+    let mut cfg_watch_desc = arm_inotify(&inotify_fd);
     let pollfd_notify = PollFd::new(&inotify_fd, PollFlags::POLLIN);
     let mut dev_name_c = [0 as c_char; 80];
     let dev_name = "Dynamic Function Row Virtual Input Device".as_bytes();
@@ -439,6 +443,7 @@ fn real_main(drm: &mut DrmBackend) {
             (cfg, layers) = load_config();
             active_layer = 0;
             needs_complete_redraw = true;
+            cfg_watch_desc = arm_inotify(&inotify_fd);
         }
 
         let mut next_timeout_ms = TIMEOUT_MS;
