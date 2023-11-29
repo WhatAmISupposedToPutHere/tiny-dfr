@@ -1,0 +1,18 @@
+[Icon Theme]
+Name=tiny-dfr-icons
+Comment=Default theme for tiny-dfr
+Directories=symbolic/status,symbolic/actions
+
+[symbolic/status]
+Context=Status
+Size=16
+MinSize=8
+MaxSize=512
+Type=Scalable
+
+[symbolic/actions]
+Context=Actions
+Size=16
+MinSize=8
+MaxSize=512
+Type=Scalable

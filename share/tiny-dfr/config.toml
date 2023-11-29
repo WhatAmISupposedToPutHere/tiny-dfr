@@ -24,6 +24,10 @@ EnablePixelShift = false
 # https://www.freedesktop.org/software/fontconfig/fontconfig-user.html
 FontTemplate = ":bold"
 
+# Set this to the icon theme you want to use for Media controls.
+# Theme can be from "/usr/share/tiny-dfr/icons", "/etc/tiny-dfr/icons" or "/usr/share/icons"
+MediaIconTheme = "tiny-dfr-icons"
+
 # This key defines the contents of the primary layer
 # (the one with F{number} keys)
 # You can change the individual buttons, add, or remove them

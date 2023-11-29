@@ -4,7 +4,7 @@ use std::{
         fd::{AsRawFd, AsFd},
         unix::{io::OwnedFd, fs::OpenOptionsExt}
     },
-    path::Path,
+    path::{Path, PathBuf},
     collections::HashMap,
     cmp::min,
     panic::{self, AssertUnwindSafe}
@@ -35,6 +35,7 @@ use nix::{
 use privdrop::PrivDrop;
 use serde::Deserialize;
 use freetype::Library as FtLibrary;
+use icon_loader::{IconFileType, IconLoader};
 
 mod backlight;
 mod display;
@@ -63,6 +64,7 @@ struct ConfigProxy {
     show_button_outlines: Option<bool>,
     enable_pixel_shift: Option<bool>,
     font_template: Option<String>,
+    media_icon_theme: Option<String>,
     primary_layer_keys: Option<Vec<ButtonConfig>>,
     media_layer_keys: Option<Vec<ButtonConfig>>
 }
@@ -84,6 +86,10 @@ struct Config {
 enum ButtonImage {
     Text(String),
     Svg(SvgHandle)
+}
+
+struct Theme {
+    media_icon_theme: String,
 }
 
 struct Button {
@@ -111,15 +117,38 @@ impl Button {
             image: ButtonImage::Text(text)
         }
     }
-    fn new_svg(path: &str, action: Key) -> Button {
-        let svg = Loader::new().read_path(format!("/etc/tiny-dfr/{}.svg", path)).or_else(|_| {
-            Loader::new().read_path(format!("/usr/share/tiny-dfr/{}.svg", path))
-        }).unwrap();
+    fn new_svg(icon_name: &str, action: Key) -> Button {
+        let theme = load_theme();
+        let icon_theme = theme.media_icon_theme;
+        let mut search_paths: Vec<PathBuf> = vec![
+            PathBuf::from("/etc/tiny-dfr/icons"),
+            PathBuf::from("/usr/share/tiny-dfr/icons/"),
+            PathBuf::from("/usr/share/icons/"),
+        ];
+        let mut loader = IconLoader::new();
+        search_paths.extend(loader.search_paths().into_owned());
+        loader.set_search_paths(search_paths);
+        loader.set_theme_name_provider(icon_theme);
+        loader.update_theme_name().unwrap();
+        let icon_loader = loader.load_icon(icon_name).unwrap();
+        let icon = icon_loader.file_for_size(16);
+        let image;
+        match icon.icon_type() {
+            IconFileType::SVG => {
+                image = ButtonImage::Svg(Loader::new().read_path(icon.path()).unwrap());
+            }
+            IconFileType::PNG => {
+                panic!("PNG icons are not supported")
+            }
+            IconFileType::XPM => {
+                panic!("Legacy XPM icons are not supported")
+            }
+        }
         Button {
             action,
             active: false,
             changed: false,
-            image: ButtonImage::Svg(svg)
+            image,
         }
     }
     fn render(&self, c: &Context, button_left_edge: f64, button_width: u64, y_shift: f64) {
@@ -318,6 +347,18 @@ fn load_font(name: &str) -> FontFace {
     let ft_library = FtLibrary::init().unwrap();
     let face = ft_library.new_face(file_name, file_idx).unwrap();
     FontFace::create_from_ft(&face).unwrap()
+}
+
+fn load_theme() -> Theme {
+    let mut base = toml::from_str::<ConfigProxy>(&read_to_string("/usr/share/tiny-dfr/config.toml").unwrap()).unwrap();
+    let user = read_to_string("/etc/tiny-dfr/config.toml").map_err::<Error, _>(|e| e.into())
+        .and_then(|r| Ok(toml::from_str::<ConfigProxy>(&r)?));
+    if let Ok(user) = user {
+        base.media_icon_theme = user.media_icon_theme.or(base.media_icon_theme);
+    };
+    Theme {
+        media_icon_theme: base.media_icon_theme.unwrap()
+    }
 }
 
 fn load_config() -> (Config, [FunctionLayer; 2]) {
