@@ -9,7 +9,7 @@ use std::{
     cmp::min,
     panic::{self, AssertUnwindSafe}
 };
-use cairo::{ImageSurface, Format, Context, Surface, Rectangle, FontFace};
+use cairo::{ImageSurface, Format, Context, Surface, Rectangle, FontFace, Antialias};
 use rsvg::{Loader, CairoRenderer, SvgHandle};
 use drm::control::ClipRect;
 use anyhow::{Error, Result};
@@ -70,7 +70,8 @@ struct ConfigProxy {
 #[derive(Deserialize)]
 #[serde(rename_all = "PascalCase")]
 struct ButtonConfig {
-    svg: Option<String>,
+    #[serde(alias = "Svg")]
+    icon: Option<String>,
     text: Option<String>,
     action: Key
 }
@@ -83,7 +84,8 @@ struct Config {
 
 enum ButtonImage {
     Text(String),
-    Svg(SvgHandle)
+    Svg(SvgHandle),
+    Bitmap(ImageSurface)
 }
 
 struct Button {
@@ -93,14 +95,38 @@ struct Button {
     action: Key
 }
 
+fn try_load_svg(path: &str) -> Result<ButtonImage> {
+    let handle = Loader::new().read_path(format!("/etc/tiny-dfr/{}.svg", path)).or_else(|_| {
+        Loader::new().read_path(format!("/usr/share/tiny-dfr/{}.svg", path))
+    })?;
+    Ok(ButtonImage::Svg(handle))
+}
+
+fn try_load_png(path: &str) -> Result<ButtonImage> {
+    let mut file = File::open(format!("/etc/tiny-dfr/{}.png", path)).or_else(|_| {
+        File::open(format!("/usr/share/tiny-dfr/{}.png", path))
+    })?;
+    let surf = ImageSurface::create_from_png(&mut file)?;
+    if surf.height() == ICON_SIZE && surf.width() == ICON_SIZE {
+        return Ok(ButtonImage::Bitmap(surf));
+    }
+    let resized = ImageSurface::create(Format::ARgb32, ICON_SIZE, ICON_SIZE).unwrap();
+    let c = Context::new(&resized).unwrap();
+    c.scale(ICON_SIZE as f64 / surf.width() as f64, ICON_SIZE as f64 / surf.height() as f64);
+    c.set_source_surface(surf, 0.0, 0.0).unwrap();
+    c.set_antialias(Antialias::Best);
+    c.paint().unwrap();
+    return Ok(ButtonImage::Bitmap(resized));
+}
+
 impl Button {
     fn with_config(cfg: ButtonConfig) -> Button {
         if let Some(text) = cfg.text {
             Button::new_text(text, cfg.action)
-        } else if let Some(svg) = cfg.svg {
-            Button::new_svg(&svg, cfg.action)
+        } else if let Some(icon) = cfg.icon {
+            Button::new_icon(&icon, cfg.action)
         } else {
-            panic!("Invalid config, a button must have either Text or Svg")
+            panic!("Invalid config, a button must have either Text or Icon")
         }
     }
     fn new_text(text: String, action: Key) -> Button {
@@ -111,15 +137,12 @@ impl Button {
             image: ButtonImage::Text(text)
         }
     }
-    fn new_svg(path: &str, action: Key) -> Button {
-        let svg = Loader::new().read_path(format!("/etc/tiny-dfr/{}.svg", path)).or_else(|_| {
-            Loader::new().read_path(format!("/usr/share/tiny-dfr/{}.svg", path))
-        }).unwrap();
+    fn new_icon(path: &str, action: Key) -> Button {
+        let image = try_load_svg(path).or_else(|_| try_load_png(path)).unwrap();
         Button {
-            action,
+            action, image,
             active: false,
             changed: false,
-            image: ButtonImage::Svg(svg)
         }
     }
     fn render(&self, c: &Context, button_left_edge: f64, button_width: u64, y_shift: f64) {
@@ -140,6 +163,13 @@ impl Button {
                 renderer.render_document(c,
                     &Rectangle::new(x, y, ICON_SIZE as f64, ICON_SIZE as f64)
                 ).unwrap();
+            }
+            ButtonImage::Bitmap(surf) => {
+                let x = button_left_edge + (button_width as f64 / 2.0 - (ICON_SIZE / 2) as f64).round();
+                let y = y_shift + ((DFR_HEIGHT as f64 - ICON_SIZE as f64) / 2.0).round();
+                c.set_source_surface(surf, x, y).unwrap();
+                c.rectangle(x, y, ICON_SIZE as f64, ICON_SIZE as f64);
+                c.fill().unwrap();
             }
         }
     }

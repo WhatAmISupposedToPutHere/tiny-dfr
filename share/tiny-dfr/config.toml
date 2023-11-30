@@ -32,10 +32,12 @@ FontTemplate = ":bold"
 PrimaryLayerKeys = [
     # Action defines the key code to send when the button is pressed
     # Text defines the button label
-    # Svg specifies the icon to be used for the button.
-    # Do not include the .svg extension in the file name.
-    # Svgs are looked up in /etc/tiny-dfr first and then in /usr/share/tiny-dfr
-    # Only one of Text or Svg is allowed,
+    # Icon specifies the icon to be used for the button.
+    # Icons can either be svgs or pngs, with svgs being preferred
+    # For best results with pngs, they should be 48x48
+    # Do not include the extension in the file name.
+    # Icons are looked up in /etc/tiny-dfr first and then in /usr/share/tiny-dfr
+    # Only one of Text or Icon is allowed,
     # if both are present, the behavior is undefined.
     # For the list of supported key codes see
     # https://docs.rs/input-linux/latest/input_linux/enum.Key.html
@@ -55,17 +57,17 @@ PrimaryLayerKeys = [
 
 # This key defines the contents of the media key layer
 MediaLayerKeys = [
-    { Svg = "brightness_low",  Action = "BrightnessDown" },
-    { Svg = "brightness_high", Action = "BrightnessUp"   },
-    { Svg = "mic_off",         Action = "MicMute"        },
-    { Svg = "search",          Action = "Search"         },
-    { Svg = "backlight_low",   Action = "IllumDown"      },
-    { Svg = "backlight_high",  Action = "IllumUp"        },
-    { Svg = "fast_rewind",     Action = "PreviousSong"   },
-    { Svg = "play_pause",      Action = "PlayPause"      },
-    { Svg = "fast_forward",    Action = "NextSong"       },
-    { Svg = "volume_off",      Action = "Mute"           },
-    { Svg = "volume_down",     Action = "VolumeDown"     },
-    { Svg = "volume_up",       Action = "VolumeUp"       }
+    { Icon = "brightness_low",  Action = "BrightnessDown" },
+    { Icon = "brightness_high", Action = "BrightnessUp"   },
+    { Icon = "mic_off",         Action = "MicMute"        },
+    { Icon = "search",          Action = "Search"         },
+    { Icon = "backlight_low",   Action = "IllumDown"      },
+    { Icon = "backlight_high",  Action = "IllumUp"        },
+    { Icon = "fast_rewind",     Action = "PreviousSong"   },
+    { Icon = "play_pause",      Action = "PlayPause"      },
+    { Icon = "fast_forward",    Action = "NextSong"       },
+    { Icon = "volume_off",      Action = "Mute"           },
+    { Icon = "volume_down",     Action = "VolumeDown"     },
+    { Icon = "volume_up",       Action = "VolumeUp"       }
 ]
 
