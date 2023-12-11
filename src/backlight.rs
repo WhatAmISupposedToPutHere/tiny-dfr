@@ -9,8 +9,10 @@ use input::event::{
     Event, switch::{Switch, SwitchEvent, SwitchState},
 };
 use crate::TIMEOUT_MS;
-use crate::backlight_lookup_table::BRIGHTNESS_LOOKUP_TABLE;
 
+const MAX_DISPLAY_BRIGHTNESS: u32 = 509;
+const MAX_TOUCH_BAR_BRIGHTNESS: u32 = 255;
+const LOOKUP_TABLE_SIZE: usize = MAX_DISPLAY_BRIGHTNESS as usize + 1;
 const BRIGHTNESS_DIM_TIMEOUT: i32 = TIMEOUT_MS * 3; // should be a multiple of TIMEOUT_MS
 const BRIGHTNESS_OFF_TIMEOUT: i32 = TIMEOUT_MS * 6; // should be a multiple of TIMEOUT_MS
 const DIMMED_BRIGHTNESS: u32 = 1;
@@ -30,17 +32,17 @@ fn find_backlight() -> Result<PathBuf> {
             return Ok(entry.path());
         }
     }
-    Err(anyhow!("No backlight device found"))
+    Err(anyhow!("No Touch Bar backlight device found"))
 }
 
 fn find_display_backlight() -> Result<PathBuf> {
     for entry in fs::read_dir("/sys/class/backlight/")? {
         let entry = entry?;
-        if entry.file_name().to_string_lossy().contains("apple-panel-bl") {
+        if entry.file_name().to_string_lossy().eq("apple-panel-bl") {
             return Ok(entry.path());
         }
     }
-    Err(anyhow!("No backlight device found"))
+    Err(anyhow!("No Built-in Retina Display backlight device found"))
 }
 
 fn set_backlight(mut file: &File, value: u32) {
@@ -52,7 +54,8 @@ pub struct BacklightManager {
     current_bl: u32,
     lid_state: SwitchState,
     bl_file: File,
-    display_bl_path: PathBuf
+    display_bl_path: PathBuf,
+    lookup_table: [u32; MAX_DISPLAY_BRIGHTNESS as usize + 1]
 }
 
 impl BacklightManager {
@@ -60,13 +63,24 @@ impl BacklightManager {
         let bl_path = find_backlight().unwrap();
         let display_bl_path = find_display_backlight().unwrap();
         let bl_file = OpenOptions::new().write(true).open(bl_path.join("brightness")).unwrap();
+        let lookup_table = BacklightManager::generate_lookup_table();
         BacklightManager {
             bl_file,
             lid_state: SwitchState::Off,
             current_bl: read_attr(&bl_path, "brightness"),
             last_active: Instant::now(),
-            display_bl_path
+            display_bl_path,
+            lookup_table
         }
+    }
+    pub fn generate_lookup_table() -> [u32; MAX_DISPLAY_BRIGHTNESS as usize + 1] {
+        let mut lookup_table = [0; LOOKUP_TABLE_SIZE];
+        for i in 0..=MAX_DISPLAY_BRIGHTNESS {
+            let normalized = i as f32 / MAX_DISPLAY_BRIGHTNESS as f32;
+            let adjusted = (normalized.powf(0.5) * MAX_TOUCH_BAR_BRIGHTNESS as f32) as u32 + 1; // Add one so that the touch bar does not turn off
+            lookup_table[i as usize] = adjusted;
+        }
+        lookup_table
     }
     pub fn process_event(&mut self, event: &Event) {
         match event {
@@ -93,7 +107,7 @@ impl BacklightManager {
         let new_bl = if self.lid_state == SwitchState::On {
             0
         } else if since_last_active < BRIGHTNESS_DIM_TIMEOUT as u64 {
-            BRIGHTNESS_LOOKUP_TABLE[read_attr(&self.display_bl_path, "brightness") as usize]
+            self.lookup_table[read_attr(&self.display_bl_path, "brightness") as usize]
         } else if since_last_active < BRIGHTNESS_OFF_TIMEOUT as u64 {
             DIMMED_BRIGHTNESS
         } else {
