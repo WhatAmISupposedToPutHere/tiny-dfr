@@ -1,5 +1,5 @@
 use std::{
-    fs::{File, OpenOptions, read_to_string},
+    fs::{File, OpenOptions},
     os::{
         fd::{AsRawFd, AsFd},
         unix::{io::OwnedFd, fs::OpenOptionsExt}
@@ -9,10 +9,10 @@ use std::{
     cmp::min,
     panic::{self, AssertUnwindSafe}
 };
-use cairo::{ImageSurface, Format, Context, Surface, Rectangle, FontFace, Antialias};
+use cairo::{ImageSurface, Format, Context, Surface, Rectangle, Antialias};
 use rsvg::{Loader, CairoRenderer, SvgHandle};
 use drm::control::ClipRect;
-use anyhow::{Error, Result};
+use anyhow::Result;
 use input::{
     Libinput, LibinputInterface, Device as InputDevice,
     event::{
@@ -26,25 +26,21 @@ use input_linux::{uinput::UInputHandle, EventKind, Key, SynchronizeKind};
 use input_linux_sys::{uinput_setup, input_id, timeval, input_event};
 use nix::{
     poll::{poll, PollFd, PollFlags},
-    sys::{
-        signal::{Signal, SigSet},
-        inotify::{AddWatchFlags, InitFlags, Inotify, WatchDescriptor}
-    },
-    errno::Errno
+    sys::signal::{Signal, SigSet},
 };
 use privdrop::PrivDrop;
-use serde::Deserialize;
-use freetype::Library as FtLibrary;
 
 mod backlight;
 mod display;
 mod pixel_shift;
 mod fonts;
+mod config;
 
 use backlight::BacklightManager;
 use display::DrmBackend;
 use pixel_shift::{PixelShiftManager, PIXEL_SHIFT_WIDTH_PX};
-use fonts::{FontConfig, Pattern};
+use config::{ButtonConfig, Config};
+use crate::config::ConfigManager;
 
 const DFR_WIDTH: i32 = 2008;
 const DFR_HEIGHT: i32 = 60;
@@ -54,33 +50,6 @@ const BUTTON_COLOR_INACTIVE: f64 = 0.200;
 const BUTTON_COLOR_ACTIVE: f64 = 0.400;
 const ICON_SIZE: i32 = 48;
 const TIMEOUT_MS: i32 = 10 * 1000;
-const USER_CFG_PATH: &'static str = "/etc/tiny-dfr/config.toml";
-
-#[derive(Deserialize)]
-#[serde(rename_all = "PascalCase")]
-struct ConfigProxy {
-    media_layer_default: Option<bool>,
-    show_button_outlines: Option<bool>,
-    enable_pixel_shift: Option<bool>,
-    font_template: Option<String>,
-    primary_layer_keys: Option<Vec<ButtonConfig>>,
-    media_layer_keys: Option<Vec<ButtonConfig>>
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "PascalCase")]
-struct ButtonConfig {
-    #[serde(alias = "Svg")]
-    icon: Option<String>,
-    text: Option<String>,
-    action: Key
-}
-
-struct Config {
-    show_button_outlines: bool,
-    enable_pixel_shift: bool,
-    font_face: FontFace,
-}
 
 enum ButtonImage {
     Text(String),
@@ -184,7 +153,7 @@ impl Button {
 }
 
 #[derive(Default)]
-struct FunctionLayer {
+pub struct FunctionLayer {
     buttons: Vec<Button>
 }
 
@@ -338,41 +307,6 @@ fn toggle_key<F>(uinput: &mut UInputHandle<F>, code: Key, value: i32) where F: A
     emit(uinput, EventKind::Synchronize, SynchronizeKind::Report as u16, 0);
 }
 
-fn load_font(name: &str) -> FontFace {
-    let fontconfig = FontConfig::new();
-    let mut pattern = Pattern::new(name);
-    fontconfig.perform_substitutions(&mut pattern);
-    let pat_match = fontconfig.match_pattern(&pattern);
-    let file_name = pat_match.get_file_name();
-    let file_idx = pat_match.get_font_index();
-    let ft_library = FtLibrary::init().unwrap();
-    let face = ft_library.new_face(file_name, file_idx).unwrap();
-    FontFace::create_from_ft(&face).unwrap()
-}
-
-fn load_config() -> (Config, [FunctionLayer; 2]) {
-    let mut base = toml::from_str::<ConfigProxy>(&read_to_string("/usr/share/tiny-dfr/config.toml").unwrap()).unwrap();
-    let user = read_to_string(USER_CFG_PATH).map_err::<Error, _>(|e| e.into())
-        .and_then(|r| Ok(toml::from_str::<ConfigProxy>(&r)?));
-    if let Ok(user) = user {
-        base.media_layer_default = user.media_layer_default.or(base.media_layer_default);
-        base.show_button_outlines = user.show_button_outlines.or(base.show_button_outlines);
-        base.enable_pixel_shift = user.enable_pixel_shift.or(base.enable_pixel_shift);
-        base.font_template = user.font_template.or(base.font_template);
-        base.media_layer_keys = user.media_layer_keys.or(base.media_layer_keys);
-        base.primary_layer_keys = user.primary_layer_keys.or(base.primary_layer_keys);
-    };
-    let media_layer = FunctionLayer::with_config(base.media_layer_keys.unwrap());
-    let fkey_layer = FunctionLayer::with_config(base.primary_layer_keys.unwrap());
-    let layers = if base.media_layer_default.unwrap(){ [media_layer, fkey_layer] } else { [fkey_layer, media_layer] };
-    let cfg = Config {
-        show_button_outlines: base.show_button_outlines.unwrap(),
-        enable_pixel_shift: base.enable_pixel_shift.unwrap(),
-        font_face: load_font(&base.font_template.unwrap()),
-    };
-    (cfg, layers)
-}
-
 fn main() {
     let mut drm = DrmBackend::open_card().unwrap();
     let _ = panic::catch_unwind(AssertUnwindSafe(|| {
@@ -400,15 +334,11 @@ fn main() {
     sigset.wait().unwrap();
 }
 
-fn arm_inotify(inotify_fd: &Inotify) -> WatchDescriptor {
-    let flags = AddWatchFlags::IN_MOVED_TO | AddWatchFlags::IN_CLOSE | AddWatchFlags::IN_ONESHOT;
-    inotify_fd.add_watch(USER_CFG_PATH, flags).unwrap()
-}
-
 fn real_main(drm: &mut DrmBackend) {
     let mut uinput = UInputHandle::new(OpenOptions::new().write(true).open("/dev/uinput").unwrap());
     let mut backlight = BacklightManager::new();
-    let (mut cfg, mut layers) = load_config();
+    let mut cfg_mgr = ConfigManager::new();
+    let (mut cfg, mut layers) = cfg_mgr.load_config();
     let mut pixel_shift = PixelShiftManager::new();
 
     // drop privileges to input and video group
@@ -438,9 +368,6 @@ fn real_main(drm: &mut DrmBackend) {
             uinput.set_keybit(button.action).unwrap();
         }
     }
-    let inotify_fd = Inotify::init(InitFlags::IN_NONBLOCK).unwrap();
-    let mut cfg_watch_desc = arm_inotify(&inotify_fd);
-    let pollfd_notify = PollFd::new(&inotify_fd, PollFlags::POLLIN);
     let mut dev_name_c = [0 as c_char; 80];
     let dev_name = "Dynamic Function Row Virtual Input Device".as_bytes();
     for i in 0..dev_name.len() {
@@ -461,19 +388,9 @@ fn real_main(drm: &mut DrmBackend) {
     let mut digitizer: Option<InputDevice> = None;
     let mut touches = HashMap::new();
     loop {
-        let evts = match inotify_fd.read_events() {
-            Ok(e) => e,
-            Err(Errno::EAGAIN) => Vec::new(),
-            r => r.unwrap(),
-        };
-        for evt in evts {
-            if evt.wd != cfg_watch_desc {
-                continue
-            }
-            (cfg, layers) = load_config();
+        if cfg_mgr.update_config(&mut cfg, &mut layers) {
             active_layer = 0;
             needs_complete_redraw = true;
-            cfg_watch_desc = arm_inotify(&inotify_fd);
         }
 
         let mut next_timeout_ms = TIMEOUT_MS;
@@ -498,7 +415,7 @@ fn real_main(drm: &mut DrmBackend) {
             needs_complete_redraw = false;
         }
 
-        poll(&mut [pollfd_tb, pollfd_main, pollfd_notify], next_timeout_ms).unwrap();
+        poll(&mut [pollfd_tb, pollfd_main, cfg_mgr.pollfd()], next_timeout_ms).unwrap();
         input_tb.dispatch().unwrap();
         input_main.dispatch().unwrap();
         for event in &mut input_tb.clone().chain(input_main.clone()) {
