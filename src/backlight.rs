@@ -78,7 +78,7 @@ impl BacklightManager {
         for i in 0..=MAX_DISPLAY_BRIGHTNESS {
             let normalized = i as f32 / MAX_DISPLAY_BRIGHTNESS as f32;
             let adjusted = (normalized.powf(0.5) * MAX_TOUCH_BAR_BRIGHTNESS as f32) as u32 + 1; // Add one so that the touch bar does not turn off
-            lookup_table[i as usize] = adjusted;
+            lookup_table[i as usize] = adjusted.min(MAX_TOUCH_BAR_BRIGHTNESS as u32); // Clamp the value to the maximum allowed brightness
         }
         lookup_table
     }
