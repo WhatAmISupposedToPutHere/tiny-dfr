@@ -9,10 +9,10 @@ use input::event::{
     Event, switch::{Switch, SwitchEvent, SwitchState},
 };
 use crate::TIMEOUT_MS;
+use crate::backlight_lookup_table::BRIGHTNESS_LOOKUP_TABLE;
 
 const BRIGHTNESS_DIM_TIMEOUT: i32 = TIMEOUT_MS * 3; // should be a multiple of TIMEOUT_MS
 const BRIGHTNESS_OFF_TIMEOUT: i32 = TIMEOUT_MS * 6; // should be a multiple of TIMEOUT_MS
-const DEFAULT_BRIGHTNESS: u32 = 128;
 const DIMMED_BRIGHTNESS: u32 = 1;
 
 fn read_attr(path: &Path, attr: &str) -> u32 {
@@ -33,6 +33,16 @@ fn find_backlight() -> Result<PathBuf> {
     Err(anyhow!("No backlight device found"))
 }
 
+fn find_display_backlight() -> Result<PathBuf> {
+    for entry in fs::read_dir("/sys/class/backlight/")? {
+        let entry = entry?;
+        if entry.file_name().to_string_lossy().contains("apple-panel-bl") {
+            return Ok(entry.path());
+        }
+    }
+    Err(anyhow!("No backlight device found"))
+}
+
 fn set_backlight(mut file: &File, value: u32) {
     file.write(format!("{}\n", value).as_bytes()).unwrap();
 }
@@ -41,18 +51,21 @@ pub struct BacklightManager {
     last_active: Instant,
     current_bl: u32,
     lid_state: SwitchState,
-    bl_file: File
+    bl_file: File,
+    display_bl_path: PathBuf
 }
 
 impl BacklightManager {
     pub fn new() -> BacklightManager {
         let bl_path = find_backlight().unwrap();
+        let display_bl_path = find_display_backlight().unwrap();
         let bl_file = OpenOptions::new().write(true).open(bl_path.join("brightness")).unwrap();
         BacklightManager {
             bl_file,
             lid_state: SwitchState::Off,
             current_bl: read_attr(&bl_path, "brightness"),
-            last_active: Instant::now()
+            last_active: Instant::now(),
+            display_bl_path
         }
     }
     pub fn process_event(&mut self, event: &Event) {
@@ -80,7 +93,7 @@ impl BacklightManager {
         let new_bl = if self.lid_state == SwitchState::On {
             0
         } else if since_last_active < BRIGHTNESS_DIM_TIMEOUT as u64 {
-            DEFAULT_BRIGHTNESS
+            BRIGHTNESS_LOOKUP_TABLE[read_attr(&self.display_bl_path, "brightness") as usize]
         } else if since_last_active < BRIGHTNESS_OFF_TIMEOUT as u64 {
             DIMMED_BRIGHTNESS
         } else {

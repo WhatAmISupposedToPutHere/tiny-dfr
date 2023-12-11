@@ -36,6 +36,7 @@ use privdrop::PrivDrop;
 use serde::Deserialize;
 use freetype::Library as FtLibrary;
 
+mod backlight_lookup_table;
 mod backlight;
 mod display;
 mod pixel_shift;
