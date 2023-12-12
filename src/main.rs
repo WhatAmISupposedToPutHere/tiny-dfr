@@ -477,6 +477,6 @@ fn real_main(drm: &mut DrmBackend) {
                 _ => {}
             }
         }
-        backlight.update_backlight();
+        backlight.update_backlight(&cfg);
     }
 }

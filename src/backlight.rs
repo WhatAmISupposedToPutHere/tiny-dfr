@@ -8,13 +8,14 @@ use anyhow::{Result, anyhow};
 use input::event::{
     Event, switch::{Switch, SwitchEvent, SwitchState},
 };
+use crate::config::Config;
 use crate::TIMEOUT_MS;
 
 const MAX_DISPLAY_BRIGHTNESS: u32 = 509;
 const MAX_TOUCH_BAR_BRIGHTNESS: u32 = 255;
-const LOOKUP_TABLE_SIZE: usize = MAX_DISPLAY_BRIGHTNESS as usize + 1;
 const BRIGHTNESS_DIM_TIMEOUT: i32 = TIMEOUT_MS * 3; // should be a multiple of TIMEOUT_MS
 const BRIGHTNESS_OFF_TIMEOUT: i32 = TIMEOUT_MS * 6; // should be a multiple of TIMEOUT_MS
+const DEFAULT_BRIGHTNESS: u32 = 128;
 const DIMMED_BRIGHTNESS: u32 = 1;
 
 fn read_attr(path: &Path, attr: &str) -> u32 {
@@ -96,12 +97,16 @@ impl BacklightManager {
             _ => {}
         }
     }
-    pub fn update_backlight(&mut self) {
+    pub fn update_backlight(&mut self, cfg: &Config) {
         let since_last_active = (Instant::now() - self.last_active).as_millis() as u64;
         let new_bl = if self.lid_state == SwitchState::On {
             0
         } else if since_last_active < BRIGHTNESS_DIM_TIMEOUT as u64 {
-            BacklightManager::display_to_touchbar(read_attr(&self.display_bl_path, "brightness"))
+            if cfg.adaptive_brightness {
+                BacklightManager::display_to_touchbar(read_attr(&self.display_bl_path, "brightness"))
+            } else {
+                DEFAULT_BRIGHTNESS
+            }
         } else if since_last_active < BRIGHTNESS_OFF_TIMEOUT as u64 {
             DIMMED_BRIGHTNESS
         } else {

@@ -24,6 +24,11 @@ EnablePixelShift = false
 # https://www.freedesktop.org/software/fontconfig/fontconfig-user.html
 FontTemplate = ":bold"
 
+# Set this to false if you want the brightness of the touchbar
+# to be set to a static value instead of following the primary
+# screen's brightness
+AdaptiveBrightness = true
+
 # This key defines the contents of the primary layer
 # (the one with F{number} keys)
 # You can change the individual buttons, add, or remove them
