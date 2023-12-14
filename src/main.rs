@@ -24,9 +24,9 @@ use input::{
 use libc::{O_ACCMODE, O_RDONLY, O_RDWR, O_WRONLY, c_char};
 use input_linux::{uinput::UInputHandle, EventKind, Key, SynchronizeKind};
 use input_linux_sys::{uinput_setup, input_id, timeval, input_event};
-use nix::{
-    poll::{poll, PollFd, PollFlags},
-    sys::signal::{Signal, SigSet},
+use nix::sys::{
+    signal::{Signal, SigSet},
+    epoll::{Epoll, EpollCreateFlags, EpollEvent, EpollFlags}
 };
 use privdrop::PrivDrop;
 
@@ -358,10 +358,10 @@ fn real_main(drm: &mut DrmBackend) {
     let mut input_main = Libinput::new_with_udev(Interface);
     input_tb.udev_assign_seat("seat-touchbar").unwrap();
     input_main.udev_assign_seat("seat0").unwrap();
-    let fd_tb = input_tb.as_fd().try_clone_to_owned().unwrap();
-    let fd_main = input_main.as_fd().try_clone_to_owned().unwrap();
-    let pollfd_tb = PollFd::new(&fd_tb, PollFlags::POLLIN);
-    let pollfd_main = PollFd::new(&fd_main, PollFlags::POLLIN);
+    let epoll = Epoll::new(EpollCreateFlags::empty()).unwrap();
+    epoll.add(input_main.as_fd(), EpollEvent::new(EpollFlags::EPOLLIN, 0)).unwrap();
+    epoll.add(input_tb.as_fd(), EpollEvent::new(EpollFlags::EPOLLIN, 1)).unwrap();
+    epoll.add(cfg_mgr.fd(), EpollEvent::new(EpollFlags::EPOLLIN, 2)).unwrap();
     uinput.set_evbit(EventKind::Key).unwrap();
     for layer in &layers {
         for button in &layer.buttons {
@@ -415,7 +415,7 @@ fn real_main(drm: &mut DrmBackend) {
             needs_complete_redraw = false;
         }
 
-        poll(&mut [pollfd_tb, pollfd_main, cfg_mgr.pollfd()], next_timeout_ms).unwrap();
+        epoll.wait(&mut [EpollEvent::new(EpollFlags::EPOLLIN, 0)], next_timeout_ms as isize).unwrap();
         input_tb.dispatch().unwrap();
         input_main.dispatch().unwrap();
         for event in &mut input_tb.clone().chain(input_main.clone()) {

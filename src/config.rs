@@ -1,13 +1,17 @@
-use std::fs::read_to_string;
+use std::{
+    fs::read_to_string,
+    os::fd::AsFd
+};
 use anyhow::Error;
 use cairo::FontFace;
 use crate::FunctionLayer;
 use crate::fonts::{FontConfig, Pattern};
 use freetype::Library as FtLibrary;
 use input_linux::Key;
-use nix::errno::Errno;
-use nix::poll::{PollFd, PollFlags};
-use nix::sys::inotify::{AddWatchFlags, InitFlags, Inotify, WatchDescriptor};
+use nix::{
+    errno::Errno,
+    sys::inotify::{AddWatchFlags, InitFlags, Inotify, WatchDescriptor}
+};
 use serde::Deserialize;
 
 const USER_CFG_PATH: &'static str = "/etc/tiny-dfr/config.toml";
@@ -125,7 +129,7 @@ impl ConfigManager {
         }
         ret
     }
-    pub fn pollfd(&self) -> PollFd {
-        PollFd::new(&self.inotify_fd, PollFlags::POLLIN)
+    pub fn fd(&self) -> &impl AsFd {
+        &self.inotify_fd
     }
 }
