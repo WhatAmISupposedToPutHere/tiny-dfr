@@ -174,6 +174,7 @@ fn try_open_card(path: &Path) -> Result<DrmBackend> {
 
 impl DrmBackend {
     pub fn open_card() -> Result<DrmBackend> {
+        let mut errors = Vec::new();
         for entry in fs::read_dir("/dev/dri/")? {
             let entry = entry?;
             if !entry.file_name().to_string_lossy().starts_with("card") {
@@ -181,10 +182,12 @@ impl DrmBackend {
             }
             match try_open_card(&entry.path()) {
                 Ok(card) => return Ok(card),
-                Err(_) => {}
+                Err(err) => {
+                    errors.push(format!("{}: {}", entry.path().as_os_str().to_string_lossy(), err.to_string()))
+                }
             }
         }
-        Err(anyhow!("No touchbar device found"))
+        Err(anyhow!("No touchbar device found, attempted: [\n    {}\n]", errors.join(",\n    ")))
     }
     pub fn dirty(&self, clips: &[ClipRect]) -> Result<()> {
         Ok(self.card.dirty_framebuffer(self.fb, clips)?)
