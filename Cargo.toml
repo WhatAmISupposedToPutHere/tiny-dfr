@@ -24,6 +24,7 @@ serde = { version = "1", features = ["derive"] }
 toml = "0.8"
 rand = "0.8"
 freetype-rs = "0.32"
+csscolorparser = { version = "0.6.2", features = [ "serde" ] }
 
 [build-dependencies]
 pkg-config = "0.3"

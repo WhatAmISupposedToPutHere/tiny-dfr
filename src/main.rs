@@ -10,6 +10,7 @@ use std::{
     panic::{self, AssertUnwindSafe}
 };
 use cairo::{ImageSurface, Format, Context, Surface, Rectangle, Antialias};
+use csscolorparser::Color;
 use rsvg::{Loader, CairoRenderer, SvgHandle};
 use drm::control::ClipRect;
 use anyhow::Result;
@@ -46,8 +47,6 @@ const DFR_WIDTH: i32 = 2008;
 const DFR_HEIGHT: i32 = 60;
 const DFR_STRIDE: i32 = 64;
 const BUTTON_SPACING_PX: i32 = 16;
-const BUTTON_COLOR_INACTIVE: f64 = 0.200;
-const BUTTON_COLOR_ACTIVE: f64 = 0.400;
 const ICON_SIZE: i32 = 48;
 const TIMEOUT_MS: i32 = 10 * 1000;
 
@@ -181,9 +180,10 @@ impl FunctionLayer {
         let bot = (DFR_HEIGHT as f64) * 0.15;
         let top = (DFR_HEIGHT as f64) * 0.85;
         let (pixel_shift_x, pixel_shift_y) = pixel_shift;
+        let background = &config.colors.background;
 
         if complete_redraw {
-            c.set_source_rgb(0.0, 0.0, 0.0);
+            c.set_source_rgb(background.r, background.g, background.b);
             c.paint().unwrap();
         }
         c.set_font_face(&config.font_face);
@@ -194,19 +194,29 @@ impl FunctionLayer {
             };
 
             let left_edge = (i as f64 * (button_width + BUTTON_SPACING_PX as f64)).floor() + pixel_shift_x + (pixel_shift_width / 2) as f64;
-            let color = if button.active {
-                BUTTON_COLOR_ACTIVE
+            let Color {
+                r: color_r,
+                g: color_g,
+                b: color_b,
+                ..
+            } = if button.active {
+                &config.colors.button_active
             } else if config.show_button_outlines {
-                BUTTON_COLOR_INACTIVE
+                &config.colors.button_inactive
             } else {
-                0.0
+                &Color {
+                    r: 0.0,
+                    g: 0.0,
+                    b: 0.0,
+                    a: 1.0,
+                }
             };
             if !complete_redraw {
-                c.set_source_rgb(0.0, 0.0, 0.0);
+                c.set_source_rgb(background.r, background.g, background.b);
                 c.rectangle(left_edge, bot - radius, button_width, top - bot + radius * 2.0);
                 c.fill().unwrap();
             }
-            c.set_source_rgb(color, color, color);
+            c.set_source_rgb(*color_r, *color_g, *color_b);
             // draw box with rounded corners
             c.new_sub_path();
             let left = left_edge + radius;
@@ -242,7 +252,8 @@ impl FunctionLayer {
             c.close_path();
 
             c.fill().unwrap();
-            c.set_source_rgb(1.0, 1.0, 1.0);
+            let text = &config.colors.text;
+            c.set_source_rgb(text.r, text.g, text.b);
             button.render(&c, left_edge, button_width.ceil() as u64, pixel_shift_y);
 
             button.changed = false;

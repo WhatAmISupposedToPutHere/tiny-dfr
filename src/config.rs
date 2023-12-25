@@ -4,6 +4,7 @@ use std::{
 };
 use anyhow::Error;
 use cairo::FontFace;
+use csscolorparser::Color;
 use crate::FunctionLayer;
 use crate::fonts::{FontConfig, Pattern};
 use freetype::Library as FtLibrary;
@@ -15,12 +16,71 @@ use nix::{
 use serde::Deserialize;
 
 const USER_CFG_PATH: &'static str = "/etc/tiny-dfr/config.toml";
+static DEFAULT_COLORS: ColorConfig = ColorConfig {
+    text: Color {
+        r: 1.0,
+        g: 1.0,
+        b: 1.0,
+        a: 1.0,
+    },
+    button_inactive: Color {
+        r: 0.2,
+        g: 0.2,
+        b: 0.2,
+        a: 1.0,
+    },
+    button_active: Color {
+        r: 0.4,
+        g: 0.4,
+        b: 0.4,
+        a: 1.0,
+    },
+    background: Color {
+        r: 0.0,
+        g: 0.0,
+        b: 0.0,
+        a: 1.0,
+    },
+};
 
 pub struct Config {
     pub show_button_outlines: bool,
     pub enable_pixel_shift: bool,
     pub font_face: FontFace,
     pub adaptive_brightness: bool,
+    pub colors: ColorConfig,
+}
+
+#[derive(Clone)]
+pub struct ColorConfig {
+    pub text: Color,
+    pub button_inactive: Color,
+    pub button_active: Color,
+    pub background: Color,
+}
+
+impl Default for ColorConfig {
+    fn default() -> Self {
+        DEFAULT_COLORS.clone()
+    }
+}
+
+impl From<ColorConfigProxy> for ColorConfig {
+    fn from(
+        ColorConfigProxy {
+            text,
+            button_inactive,
+            button_active,
+            background,
+        }: ColorConfigProxy,
+    ) -> Self {
+        Self {
+            text: text.unwrap_or(DEFAULT_COLORS.text.clone()),
+            button_inactive: button_inactive.unwrap_or(DEFAULT_COLORS.button_inactive.clone()),
+            button_active: button_active.unwrap_or(DEFAULT_COLORS.button_active.clone()),
+            background: background.unwrap_or(DEFAULT_COLORS.background.clone())
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -32,7 +92,17 @@ struct ConfigProxy {
     font_template: Option<String>,
     adaptive_brightness: Option<bool>,
     primary_layer_keys: Option<Vec<ButtonConfig>>,
-    media_layer_keys: Option<Vec<ButtonConfig>>
+    media_layer_keys: Option<Vec<ButtonConfig>>,
+    colors: Option<ColorConfigProxy>
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct ColorConfigProxy {
+    text: Option<Color>,
+    button_inactive: Option<Color>,
+    button_active: Option<Color>,
+    background: Option<Color>,
 }
 
 #[derive(Deserialize)]
@@ -68,6 +138,7 @@ fn load_config() -> (Config, [FunctionLayer; 2]) {
         base.adaptive_brightness = user.adaptive_brightness.or(base.adaptive_brightness);
         base.media_layer_keys = user.media_layer_keys.or(base.media_layer_keys);
         base.primary_layer_keys = user.primary_layer_keys.or(base.primary_layer_keys);
+        base.colors = user.colors.or(base.colors)
     };
     let media_layer = FunctionLayer::with_config(base.media_layer_keys.unwrap());
     let fkey_layer = FunctionLayer::with_config(base.primary_layer_keys.unwrap());
@@ -77,6 +148,7 @@ fn load_config() -> (Config, [FunctionLayer; 2]) {
         enable_pixel_shift: base.enable_pixel_shift.unwrap(),
         adaptive_brightness: base.adaptive_brightness.unwrap(),
         font_face: load_font(&base.font_template.unwrap()),
+        colors: base.colors.map(Into::into).unwrap_or_default(),
     };
     (cfg, layers)
 }
