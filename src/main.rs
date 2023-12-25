@@ -433,6 +433,12 @@ fn real_main(drm: &mut DrmBackend) {
                             KeyState::Pressed => 1,
                             KeyState::Released => 0
                         };
+                        // To avoid keys staying active on switching layers.
+                        for key in &mut layers[active_layer].buttons {
+                            if key.active {
+                                key.set_active(&mut uinput, false)
+                            }
+                        }
                         if active_layer != new_layer {
                             active_layer = new_layer;
                             needs_complete_redraw = true;
