@@ -15,7 +15,6 @@ const MAX_DISPLAY_BRIGHTNESS: u32 = 509;
 const MAX_TOUCH_BAR_BRIGHTNESS: u32 = 255;
 const BRIGHTNESS_DIM_TIMEOUT: i32 = TIMEOUT_MS * 3; // should be a multiple of TIMEOUT_MS
 const BRIGHTNESS_OFF_TIMEOUT: i32 = TIMEOUT_MS * 6; // should be a multiple of TIMEOUT_MS
-const DEFAULT_BRIGHTNESS: u32 = 128;
 const DIMMED_BRIGHTNESS: u32 = 1;
 
 fn read_attr(path: &Path, attr: &str) -> u32 {
@@ -71,10 +70,10 @@ impl BacklightManager {
             display_bl_path
         }
     }
-    fn display_to_touchbar(display: u32) -> u32 {
+    fn display_to_touchbar(display: u32, active_brightness: u32) -> u32 {
         let normalized = display as f64 / MAX_DISPLAY_BRIGHTNESS as f64;
         // Add one so that the touch bar does not turn off
-        let adjusted = (normalized.powf(0.5) * MAX_TOUCH_BAR_BRIGHTNESS as f64) as u32 + 1;
+        let adjusted = (normalized.powf(0.5) * active_brightness as f64) as u32 + 1;
         adjusted.min(MAX_TOUCH_BAR_BRIGHTNESS) // Clamp the value to the maximum allowed brightness
     }
     pub fn process_event(&mut self, event: &Event) {
@@ -103,9 +102,9 @@ impl BacklightManager {
             0
         } else if since_last_active < BRIGHTNESS_DIM_TIMEOUT as u64 {
             if cfg.adaptive_brightness {
-                BacklightManager::display_to_touchbar(read_attr(&self.display_bl_path, "brightness"))
+                BacklightManager::display_to_touchbar(read_attr(&self.display_bl_path, "brightness"), cfg.active_brightness)
             } else {
-                DEFAULT_BRIGHTNESS
+                cfg.active_brightness
             }
         } else if since_last_active < BRIGHTNESS_OFF_TIMEOUT as u64 {
             DIMMED_BRIGHTNESS

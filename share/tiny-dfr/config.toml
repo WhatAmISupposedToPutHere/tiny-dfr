@@ -29,6 +29,12 @@ FontTemplate = ":bold"
 # screen's brightness
 AdaptiveBrightness = true
 
+# With adaptive brightness disabled this is used as the brightness
+# in the active state
+# With it enabled, this is the maximum point on the brightness curve
+# Accepted values are 0-255
+ActiveBrightness = 128
+
 # This key defines the contents of the primary layer
 # (the one with F{number} keys)
 # You can change the individual buttons, add, or remove them
