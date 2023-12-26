@@ -1,3 +1,4 @@
+#![allow(non_upper_case_globals)]
 use std::ffi::{c_char, c_int, CStr, CString};
 use std::ptr;
 
@@ -9,10 +10,20 @@ struct FcPattern {
 struct FcConfig {
     _data: [u8; 0]
 }
+
 type FcResult = c_int;
+const FcResultMatch: FcResult = 0;
+const FcResultNoMatch: FcResult = 1;
+const FcResultTypeMismatch: FcResult = 2;
+const FcResultNoId: FcResult = 3;
+const FcResultOutOfMemory: FcResult = 4;
+
 type FcMatchKind = c_int;
-#[allow(non_upper_case_globals)]
 const FcMatchPattern: FcMatchKind = 0;
+
+pub enum FontConfigError {
+    FontNotFound
+}
 
 pub struct FontConfig {
     config: *const FcConfig
@@ -27,18 +38,23 @@ impl FontConfig {
             config
         }
     }
-    pub fn match_pattern(&self, pattern: &Pattern) -> Pattern {
+    pub fn match_pattern(&self, pattern: &Pattern) -> Result<Pattern, FontConfigError> {
         let mut result: FcResult = 0;
         let match_ = unsafe {
             FcFontMatch(self.config, pattern.pattern, &mut result)
         };
-        Pattern {
-            pattern: match_
+        if match_ == ptr::null_mut() {
+            return Err(FontConfigError::FontNotFound);
         }
+        Ok(Pattern {
+            pattern: match_
+        })
     }
     pub fn perform_substitutions(&self, pattern: &mut Pattern) {
         unsafe {
-            FcConfigSubstitute(self.config, pattern.pattern, FcMatchPattern);
+            if (FcConfigSubstitute(self.config, pattern.pattern, FcMatchPattern)) == 0 {
+                panic!("Allocation error while loading fontconfig data");
+            }
             FcDefaultSubstitute(pattern.pattern);
         }
     }
@@ -48,6 +64,27 @@ impl Drop for FontConfig {
     fn drop(&mut self) {
         unsafe {
             FcConfigDestroy(self.config)
+        }
+    }
+}
+
+fn throw_on_fcpattern_result(res: FcResult) {
+    match res {
+        FcResultMatch => {},
+        FcResultNoMatch => {
+            panic!("NULL pattern");
+        },
+        FcResultTypeMismatch => {
+            panic!("Wrong type for pattern element");
+        },
+        FcResultNoId => {
+            panic!("Unknown pattern element");
+        },
+        FcResultOutOfMemory => {
+            panic!("Out of memory");
+        },
+        r => {
+            panic!("Unknown fontconfig return value {:?}", r)
         }
     }
 }
@@ -70,7 +107,8 @@ impl Pattern {
         let name = CString::new("file").unwrap();
         unsafe {
             let mut file_name = ptr::null();
-            FcPatternGetString(self.pattern, name.as_ptr(), 0, &mut file_name);
+            let res = FcPatternGetString(self.pattern, name.as_ptr(), 0, &mut file_name);
+            throw_on_fcpattern_result(res);
             CStr::from_ptr(file_name).to_str().unwrap()
         }
     }
@@ -78,7 +116,8 @@ impl Pattern {
         let name = CString::new("index").unwrap();
         unsafe {
             let mut index = 0;
-            FcPatternGetInteger(self.pattern, name.as_ptr(), 0, &mut index);
+            let res = FcPatternGetInteger(self.pattern, name.as_ptr(), 0, &mut index);
+            throw_on_fcpattern_result(res);
             index as isize
         }
     }
