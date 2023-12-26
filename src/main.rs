@@ -24,9 +24,12 @@ use input::{
 use libc::{O_ACCMODE, O_RDONLY, O_RDWR, O_WRONLY, c_char};
 use input_linux::{uinput::UInputHandle, EventKind, Key, SynchronizeKind};
 use input_linux_sys::{uinput_setup, input_id, timeval, input_event};
-use nix::sys::{
-    signal::{Signal, SigSet},
-    epoll::{Epoll, EpollCreateFlags, EpollEvent, EpollFlags}
+use nix::{
+    sys::{
+        signal::{Signal, SigSet},
+        epoll::{Epoll, EpollCreateFlags, EpollEvent, EpollFlags}
+    }, 
+    errno::Errno
 };
 use privdrop::PrivDrop;
 
@@ -415,7 +418,10 @@ fn real_main(drm: &mut DrmBackend) {
             needs_complete_redraw = false;
         }
 
-        epoll.wait(&mut [EpollEvent::new(EpollFlags::EPOLLIN, 0)], next_timeout_ms as isize).unwrap();
+        match epoll.wait(&mut [EpollEvent::new(EpollFlags::EPOLLIN, 0)], next_timeout_ms as isize) {
+            Err(Errno::EINTR) | Ok(_) => { 0 },
+            e => e.unwrap(),
+        };
         input_tb.dispatch().unwrap();
         input_main.dispatch().unwrap();
         for event in &mut input_tb.clone().chain(input_main.clone()) {
