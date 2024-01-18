@@ -12,7 +12,7 @@ repository = "https://github.com/WhatAmISupposedToPutHere/tiny-dfr"
 [dependencies]
 cairo-rs = { version = "0.18", default-features = false, features = ["freetype"] }
 librsvg = "2.56.0"
-drm = "0.10.0"
+drm = "0.11.1"
 anyhow = "1"
 input = "0.8"
 libc = "0.2"
