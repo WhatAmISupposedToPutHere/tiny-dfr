@@ -52,6 +52,8 @@ PrimaryLayerKeys = [
     # if both are present, the behavior is undefined.
     # For the list of supported key codes see
     # https://docs.rs/input-linux/latest/input_linux/enum.Key.html
+    # Note that the escape key is not specified here, as it is added
+    # automatically on Macs without a physical one
     { Text = "F1",  Action = "F1"  },
     { Text = "F2",  Action = "F2"  },
     { Text = "F3",  Action = "F3"  },
