@@ -341,7 +341,7 @@ fn real_main(drm: &mut DrmBackend) {
     let mut uinput = UInputHandle::new(OpenOptions::new().write(true).open("/dev/uinput").unwrap());
     let mut backlight = BacklightManager::new();
     let mut cfg_mgr = ConfigManager::new();
-    let (mut cfg, mut layers) = cfg_mgr.load_config();
+    let (mut cfg, mut layers) = cfg_mgr.load_config(width);
     let mut pixel_shift = PixelShiftManager::new();
 
     // drop privileges to input and video group
@@ -391,7 +391,7 @@ fn real_main(drm: &mut DrmBackend) {
     let mut digitizer: Option<InputDevice> = None;
     let mut touches = HashMap::new();
     loop {
-        if cfg_mgr.update_config(&mut cfg, &mut layers) {
+        if cfg_mgr.update_config(&mut cfg, &mut layers, width) {
             active_layer = 0;
             needs_complete_redraw = true;
         }

@@ -4,7 +4,7 @@ use std::{
 };
 use anyhow::Error;
 use cairo::FontFace;
-use crate::FunctionLayer;
+use crate::{FunctionLayer, Button};
 use crate::fonts::{FontConfig, Pattern};
 use freetype::Library as FtLibrary;
 use input_linux::Key;
@@ -61,7 +61,7 @@ fn load_font(name: &str) -> FontFace {
     FontFace::create_from_ft(&face).unwrap()
 }
 
-fn load_config() -> (Config, [FunctionLayer; 2]) {
+fn load_config(width: u16) -> (Config, [FunctionLayer; 2]) {
     let mut base = toml::from_str::<ConfigProxy>(&read_to_string("/usr/share/tiny-dfr/config.toml").unwrap()).unwrap();
     let user = read_to_string(USER_CFG_PATH).map_err::<Error, _>(|e| e.into())
         .and_then(|r| Ok(toml::from_str::<ConfigProxy>(&r)?));
@@ -77,7 +77,12 @@ fn load_config() -> (Config, [FunctionLayer; 2]) {
     };
     let media_layer = FunctionLayer::with_config(base.media_layer_keys.unwrap());
     let fkey_layer = FunctionLayer::with_config(base.primary_layer_keys.unwrap());
-    let layers = if base.media_layer_default.unwrap(){ [media_layer, fkey_layer] } else { [fkey_layer, media_layer] };
+    let mut layers = if base.media_layer_default.unwrap(){ [media_layer, fkey_layer] } else { [fkey_layer, media_layer] };
+    if width >= 2170 {
+        for layer in &mut layers {
+            layer.buttons.insert(0, Button::new_text("esc".to_string(), Key::Esc));
+        }
+    }
     let cfg = Config {
         show_button_outlines: base.show_button_outlines.unwrap(),
         enable_pixel_shift: base.enable_pixel_shift.unwrap(),
@@ -110,10 +115,10 @@ impl ConfigManager {
             inotify_fd, watch_desc
         }
     }
-    pub fn load_config(&self) -> (Config, [FunctionLayer; 2]) {
-        load_config()
+    pub fn load_config(&self, width: u16) -> (Config, [FunctionLayer; 2]) {
+        load_config(width)
     }
-    pub fn update_config(&mut self, cfg: &mut Config, layers: &mut [FunctionLayer; 2]) -> bool {
+    pub fn update_config(&mut self, cfg: &mut Config, layers: &mut [FunctionLayer; 2], width: u16) -> bool {
         if self.watch_desc.is_none() {
             self.watch_desc = arm_inotify(&self.inotify_fd);
             return false;
@@ -128,7 +133,7 @@ impl ConfigManager {
             if evt.wd != self.watch_desc.unwrap() {
                 continue
             }
-            let parts = load_config();
+            let parts = load_config(width);
             *cfg = parts.0;
             *layers = parts.1;
             ret = true;
