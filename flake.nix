@@ -5,10 +5,10 @@
   };
   outputs = { self, nixpkgs }:
     let
-      pkgs = import nixpkgs { system = "aarch64-linux"; };
+      pkgs = import nixpkgs { system = "x86_64-linux"; };
     in
     rec {
-      packages.aarch64-linux.default = pkgs.rustPlatform.buildRustPackage {
+      packages.x86_64-linux.default = pkgs.rustPlatform.buildRustPackage {
         name = "tiny-dfr";
         version = "0.2.0";
         src = ./.;
@@ -29,12 +29,12 @@
           pkgs.libxml2
         ];
       };
-      devShells.aarch64-linux.default = pkgs.mkShell {
+      devShells.x86_64-linux.default = pkgs.mkShell {
         inputsFrom = [
-          packages.aarch64-linux.default
+          packages.x86_64-linux.default
         ];
         packages = [
-	  pkgs.rustfmt
+	        pkgs.rustfmt
           pkgs.rust-analyzer
         ];
         RUST_SRC_PATH = "${pkgs.rustPlatform.rustLibSrc}";
