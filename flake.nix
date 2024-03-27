@@ -5,39 +5,56 @@
   };
   outputs = { self, nixpkgs }:
     let
-      pkgs = import nixpkgs { system = "aarch64-linux"; };
+      supportedSystems = [ "x86_64-linux" "aarch64-linux" ];
+      forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
+      pkgsFor = forAllSystems (system: import nixpkgs { inherit system; });
     in
     rec {
-      packages.aarch64-linux.default = pkgs.rustPlatform.buildRustPackage {
-        name = "tiny-dfr";
-        version = "0.2.0";
-        src = ./.;
-        cargoLock = {
-          lockFile = ./Cargo.lock;
-        };
-        nativeBuildInputs = [
-          pkgs.pkg-config
-        ];
-        buildInputs = [
-          pkgs.cairo
-          pkgs.libinput
-          pkgs.freetype
-          pkgs.fontconfig
-          pkgs.glib
-          pkgs.pango
-          pkgs.gdk-pixbuf
-          pkgs.libxml2
-        ];
-      };
-      devShells.aarch64-linux.default = pkgs.mkShell {
-        inputsFrom = [
-          packages.aarch64-linux.default
-        ];
-        packages = [
-	  pkgs.rustfmt
-          pkgs.rust-analyzer
-        ];
-        RUST_SRC_PATH = "${pkgs.rustPlatform.rustLibSrc}";
-      };
+      packages = forAllSystems(system: 
+        let
+          pkgs = pkgsFor.${system};
+        in
+        {
+          default = pkgs.rustPlatform.buildRustPackage {
+            name = "tiny-dfr";
+            version = "0.2.0";
+            src = ./.;
+            cargoLock = {
+              lockFile = ./Cargo.lock;
+            };
+            nativeBuildInputs = [
+              pkgs.pkg-config
+            ];
+            buildInputs = [
+              pkgs.cairo
+              pkgs.libinput
+              pkgs.freetype
+              pkgs.fontconfig
+              pkgs.glib
+              pkgs.pango
+              pkgs.gdk-pixbuf
+              pkgs.libxml2
+            ];
+          };
+        }
+      );
+
+      devShells = forAllSystems(system:
+        let
+          pkgs = pkgsFor.${system};
+        in
+        {
+          default = pkgs.mkShell {
+            inputsFrom = [
+              packages.${system}.default
+            ];
+            packages = [
+    	        pkgs.rustfmt
+              pkgs.rust-analyzer
+            ];
+            RUST_SRC_PATH = "${pkgs.rustPlatform.rustLibSrc}";
+          };
+        }
+      );
     };
 }
