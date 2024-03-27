@@ -356,6 +356,7 @@ fn real_main(drm: &mut DrmBackend) {
     let mut surface = ImageSurface::create(Format::ARgb32, DFR_STRIDE, DFR_WIDTH).unwrap();
     let mut active_layer = 0;
     let mut needs_complete_redraw = true;
+    let mut waiting_for_touch_event = false;
 
     let mut input_tb = Libinput::new_with_udev(Interface);
     let mut input_main = Libinput::new_with_udev(Interface);
@@ -434,7 +435,7 @@ fn real_main(drm: &mut DrmBackend) {
                     }
                 },
                 Event::Keyboard(KeyboardEvent::Key(key)) => {
-                    if key.key() == Key::Fn as u32 {
+                    if Key::from_code(key.key() as u16) == Ok(Key::Fn) {
                         let new_layer = match key.key_state() {
                             KeyState::Pressed => 1,
                             KeyState::Released => 0
@@ -443,11 +444,23 @@ fn real_main(drm: &mut DrmBackend) {
                             active_layer = new_layer;
                             needs_complete_redraw = true;
                         }
+                        if cfg.fn_toggle_layers {
+                            match key.key_state() {
+                                KeyState::Pressed => waiting_for_touch_event = true,
+                                KeyState::Released => if waiting_for_touch_event {
+                                    layers.swap(0, 1);
+                                    needs_complete_redraw = true;        
+                                }
+                            };
+                        }
                     }
                 },
                 Event::Touch(te) => {
                     if Some(te.device()) != digitizer || backlight.current_bl() == 0 {
                         continue
+                    }
+                    if cfg.fn_toggle_layers {
+                        waiting_for_touch_event = false;
                     }
                     match te {
                         TouchEvent::Down(dn) => {
