@@ -42,7 +42,7 @@ fn find_backlight() -> Result<PathBuf> {
 fn find_display_backlight() -> Result<PathBuf> {
     for entry in fs::read_dir("/sys/class/backlight/")? {
         let entry = entry?;
-        if ["apple_panel_bl", "intel_backlight"].iter().any(|s| entry.file_name().to_string_lossy().contains(s)) {
+        if ["apple_panel_bl", "gmux_backlight", "intel_backlight"].iter().any(|s| entry.file_name().to_string_lossy().contains(s)) {
             return Ok(entry.path());
         }
     }
