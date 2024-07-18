@@ -1,11 +1,13 @@
+use core::time;
 use std::{
     fs::{File, OpenOptions, self},
     path::{PathBuf, Path},
     time::Instant,
     io::Write,
     cmp::min,
+    thread::sleep,
 };
-use anyhow::{Result, anyhow};
+use anyhow::{Result, Context, anyhow};
 use input::event::{
     Event, switch::{Switch, SwitchEvent, SwitchState},
 };
@@ -26,27 +28,27 @@ fn read_attr(path: &Path, attr: &str) -> u32 {
         .expect(&format!("Failed to parse {attr}"))
 }
 
-fn find_backlight() -> Result<PathBuf> {
-    for entry in fs::read_dir("/sys/class/backlight/")? {
-        let entry = entry?;
-        let file_name = entry.file_name();
-        let name = file_name.to_string_lossy();
-
-        if ["display-pipe", "appletb_backlight"].iter().any(|s| name.contains(s)) {
-            return Ok(entry.path());
+fn try_backlight_devices(devices: &[&str]) -> Result<PathBuf> {
+    for _ in 0..5 {
+        for entry in fs::read_dir("/sys/class/backlight")? {
+            let entry = entry?;
+            if devices.iter().any(|device| entry.file_name().to_string_lossy().contains(device)) {
+                return Ok(entry.path());
+            }
         }
+        sleep(time::Duration::from_secs(1));
     }
-    Err(anyhow!("No Touch Bar backlight device found"))
+    Err(anyhow!("Could not find requested backlight devices: {:#?}", devices))
+}
+
+fn find_backlight() -> Result<PathBuf> {
+    return try_backlight_devices(&["display-pipe", "appletb_backlight"])
+        .context("No Touch Bar backlight device found")
 }
 
 fn find_display_backlight() -> Result<PathBuf> {
-    for entry in fs::read_dir("/sys/class/backlight/")? {
-        let entry = entry?;
-        if ["apple-panel-bl", "gmux_backlight", "intel_backlight", "acpi_video0"].iter().any(|s| entry.file_name().to_string_lossy().contains(s)) {
-            return Ok(entry.path());
-        }
-    }
-    Err(anyhow!("No Built-in Retina Display backlight device found"))
+    return try_backlight_devices(&["apple-panel-bl", "gmux_backlight", "intel_backlight", "acpi_video0"])
+        .context("No Built-in Retina Display backlight device found")
 }
 
 fn set_backlight(mut file: &File, value: u32) {

@@ -49,7 +49,7 @@
               packages.${system}.default
             ];
             packages = [
-    	        pkgs.rustfmt
+              pkgs.rustfmt
               pkgs.rust-analyzer
             ];
             RUST_SRC_PATH = "${pkgs.rustPlatform.rustLibSrc}";
