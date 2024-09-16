@@ -61,7 +61,7 @@ struct Button {
     image: ButtonImage,
     changed: bool,
     active: bool,
-    action: Key
+    action: Key,
 }
 
 fn try_load_svg(path: &str) -> Result<ButtonImage> {
@@ -103,7 +103,7 @@ impl Button {
             action,
             active: false,
             changed: false,
-            image: ButtonImage::Text(text)
+            image: ButtonImage::Text(text),
         }
     }
     fn new_icon(path: &str, action: Key) -> Button {
@@ -154,7 +154,8 @@ impl Button {
 
 #[derive(Default)]
 pub struct FunctionLayer {
-    buttons: Vec<Button>
+    buttons: Vec<(usize, Button)>,
+    virtual_button_count: usize,
 }
 
 impl FunctionLayer {
@@ -162,8 +163,20 @@ impl FunctionLayer {
         if cfg.is_empty() {
             panic!("Invalid configuration, layer has 0 buttons");
         }
+        
+        let mut virtual_button_count = 0;
         FunctionLayer {
-            buttons: cfg.into_iter().map(Button::with_config).collect()
+            buttons: cfg.into_iter().scan(&mut virtual_button_count, |state, cfg| {
+                let i = **state;
+                let mut stretch = cfg.stretch.unwrap_or(1);
+                if stretch < 1 {
+                    println!("Stretch value must be at least 1, setting to 1.");
+                    stretch = 1;
+                }
+                **state += stretch;
+                Some((i, Button::with_config(cfg)))
+            }).collect(),
+            virtual_button_count,
         }
     }
     fn draw(&mut self, config: &Config, width: i32, height: i32, surface: &Surface, pixel_shift: (f64, f64), complete_redraw: bool) -> Vec<ClipRect> {
@@ -176,7 +189,7 @@ impl FunctionLayer {
         c.translate(height as f64, 0.0);
         c.rotate((90.0f64).to_radians());
         let pixel_shift_width = if config.enable_pixel_shift { PIXEL_SHIFT_WIDTH_PX } else { 0 };
-        let button_width = ((width - pixel_shift_width as i32) - (BUTTON_SPACING_PX * (self.buttons.len() - 1) as i32)) as f64 / self.buttons.len() as f64;
+        let virtual_button_width = ((width - pixel_shift_width as i32) - (BUTTON_SPACING_PX * (self.virtual_button_count - 1) as i32)) as f64 / self.virtual_button_count as f64;
         let radius = 8.0f64;
         let bot = (height as f64) * 0.15;
         let top = (height as f64) * 0.85;
@@ -188,12 +201,24 @@ impl FunctionLayer {
         }
         c.set_font_face(&config.font_face);
         c.set_font_size(32.0);
-        for (i, button) in self.buttons.iter_mut().enumerate() {
+
+        for i in 0..self.buttons.len() {
+            let end = if i + 1 < self.buttons.len() {
+                self.buttons[i + 1].0
+            } else {
+                self.virtual_button_count
+            };
+            let (start, button) = &mut self.buttons[i];
+            let start = *start;
+            
             if !button.changed && !complete_redraw {
                 continue;
             };
 
-            let left_edge = (i as f64 * (button_width + BUTTON_SPACING_PX as f64)).floor() + pixel_shift_x + (pixel_shift_width / 2) as f64;
+            let left_edge = (start as f64 * (virtual_button_width + BUTTON_SPACING_PX as f64)).floor() + pixel_shift_x + (pixel_shift_width / 2) as f64;
+
+            let button_width = virtual_button_width + ((end - start - 1) as f64 * (virtual_button_width + BUTTON_SPACING_PX as f64)).floor();
+
             let color = if button.active {
                 BUTTON_COLOR_ACTIVE
             } else if config.show_button_outlines {
@@ -259,6 +284,33 @@ impl FunctionLayer {
 
         modified_regions
     }
+    
+    fn hit(&self, width: u16, height: u16, x: f64, y: f64, i: Option<usize>) -> Option<usize> {
+        let virtual_button_width = (width as i32 - (BUTTON_SPACING_PX * (self.virtual_button_count - 1) as i32)) as f64 / self.virtual_button_count as f64;
+        
+        let i = i.unwrap_or_else(|| {
+            let virtual_i = (x / (width as f64 / self.virtual_button_count as f64)) as usize;
+            self.buttons.iter().position(|(start, _)| *start > virtual_i).unwrap_or(self.buttons.len()) - 1
+        });
+        
+        let start = self.buttons[i].0;
+        let end = if i + 1 < self.buttons.len() {
+            self.buttons[i + 1].0
+        } else {
+            self.virtual_button_count
+        };
+        
+        let left_edge = (start as f64 * (virtual_button_width + BUTTON_SPACING_PX as f64)).floor();
+
+        let button_width = virtual_button_width + ((end - start - 1) as f64 * (virtual_button_width + BUTTON_SPACING_PX as f64)).floor();
+        
+        if x < left_edge || x > (left_edge + button_width)
+            || y < 0.1 * height as f64 || y > 0.9 * height as f64 {
+            return None;
+        }
+        
+        Some(i)
+    }
 }
 
 struct Interface;
@@ -280,15 +332,6 @@ impl LibinputInterface for Interface {
     }
 }
 
-
-fn button_hit(num: u32, idx: u32, width: u16, height: u16, x: f64, y: f64) -> bool {
-    let button_width = (width as i32 - (BUTTON_SPACING_PX * (num - 1) as i32)) as f64 / num as f64;
-    let left_edge = idx as f64 * (button_width + BUTTON_SPACING_PX as f64);
-    if x < left_edge || x > (left_edge + button_width) {
-        return false
-    }
-    y > 0.1 * height as f64 && y < 0.9 * height as f64
-}
 
 fn emit<F>(uinput: &mut UInputHandle<F>, ty: EventKind, code: u16, value: i32) where F: AsRawFd {
     uinput.write(&[input_event {
@@ -368,7 +411,7 @@ fn real_main(drm: &mut DrmBackend) {
     uinput.set_evbit(EventKind::Key).unwrap();
     for layer in &layers {
         for button in &layer.buttons {
-            uinput.set_keybit(button.action).unwrap();
+            uinput.set_keybit(button.1.action).unwrap();
         }
     }
     let mut dev_name_c = [0 as c_char; 80];
@@ -405,7 +448,7 @@ fn real_main(drm: &mut DrmBackend) {
             next_timeout_ms = min(next_timeout_ms, pixel_shift_next_timeout_ms);
         }
 
-        if needs_complete_redraw || layers[active_layer].buttons.iter().any(|b| b.changed) {
+        if needs_complete_redraw || layers[active_layer].buttons.iter().any(|b| b.1.changed) {
             let shift = if cfg.enable_pixel_shift {
                 pixel_shift.get()
             } else {
@@ -453,10 +496,9 @@ fn real_main(drm: &mut DrmBackend) {
                         TouchEvent::Down(dn) => {
                             let x = dn.x_transformed(width as u32);
                             let y = dn.y_transformed(height as u32);
-                            let btn = (x / (width as f64 / layers[active_layer].buttons.len() as f64)) as u32;
-                            if button_hit(layers[active_layer].buttons.len() as u32, btn, width, height, x, y) {
+                            if let Some(btn) = layers[active_layer].hit(width, height, x, y, None) {
                                 touches.insert(dn.seat_slot(), (active_layer, btn));
-                                layers[active_layer].buttons[btn as usize].set_active(&mut uinput, true);
+                                layers[active_layer].buttons[btn].1.set_active(&mut uinput, true);
                             }
                         },
                         TouchEvent::Motion(mtn) => {
@@ -467,15 +509,15 @@ fn real_main(drm: &mut DrmBackend) {
                             let x = mtn.x_transformed(width as u32);
                             let y = mtn.y_transformed(height as u32);
                             let (layer, btn) = *touches.get(&mtn.seat_slot()).unwrap();
-                            let hit = button_hit(layers[layer].buttons.len() as u32, btn, width, height, x, y);
-                            layers[layer].buttons[btn as usize].set_active(&mut uinput, hit);
+                            let hit = layers[active_layer].hit(width, height, x, y, Some(btn)).is_some();
+                            layers[layer].buttons[btn].1.set_active(&mut uinput, hit);
                         },
                         TouchEvent::Up(up) => {
                             if !touches.contains_key(&up.seat_slot()) {
                                 continue;
                             }
                             let (layer, btn) = *touches.get(&up.seat_slot()).unwrap();
-                            layers[layer].buttons[btn as usize].set_active(&mut uinput, false);
+                            layers[layer].buttons[btn].1.set_active(&mut uinput, false);
                         }
                         _ => {}
                     }
