@@ -40,10 +40,15 @@ ActiveBrightness = 128
 # You can change the individual buttons, add, or remove them
 # Any number of keys that is greater than 0 is allowed
 # however rendering will start to break around 24 keys
+# Buttons can be made larger by setting the optional Stretch field
+# to a number greater than 1 (which means the button will take up
+# that many button spaces).
 PrimaryLayerKeys = [
     # Action defines the key code to send when the button is pressed
     # Text defines the button label
     # Icon specifies the icon to be used for the button.
+    # Stretch specifies how many button spaces the button should take up
+    # and defaults to 1
     # Icons can either be svgs or pngs, with svgs being preferred
     # For best results with pngs, they should be 48x48
     # Do not include the extension in the file name.
@@ -66,6 +71,22 @@ PrimaryLayerKeys = [
     { Text = "F10", Action = "F10" },
     { Text = "F11", Action = "F11" },
     { Text = "F12", Action = "F12" }
+    # Example with Stretch:
+    # # because most buttons have stretch 2, they behave as if they all had 1:
+    # { Text = "F1",  Action = "F1", Stretch = 2  },
+    # { Text = "F2",  Action = "F2", Stretch = 2  },
+    # # these two buttons are half the size of the other buttons:
+    # { Text = "F3",  Action = "F3", Stretch = 1  },
+    # { Text = "F4",  Action = "F4", Stretch = 1  },
+    # { Text = "F5",  Action = "F5", Stretch = 2  },
+    # { Text = "F6",  Action = "F6", Stretch = 2  },
+    # { Text = "F7",  Action = "F7", Stretch = 2  },
+    # # these two buttons are one and a half the size of the other buttons:
+    # { Text = "F8",  Action = "F8", Stretch = 3  },
+    # { Text = "F9",  Action = "F9", Stretch = 3  },
+    # { Text = "F10", Action = "F10", Stretch = 2 },
+    # { Text = "F11", Action = "F11", Stretch = 2 },
+    # { Text = "F12", Action = "F12", Stretch = 2 }
 ]
 
 # This key defines the contents of the media key layer
@@ -83,4 +104,3 @@ MediaLayerKeys = [
     { Icon = "volume_down",     Action = "VolumeDown"     },
     { Icon = "volume_up",       Action = "VolumeUp"       }
 ]
-
