@@ -16,9 +16,9 @@ drm = "0.11.1"
 anyhow = "1"
 input = "0.8"
 libc = "0.2"
-input-linux = { version = "0.6", features = ["serde"] }
-input-linux-sys = "0.8"
-nix = { version = "0.27", features = ["event", "signal", "inotify"] }
+input-linux = { version = "0.7", features = ["serde"] }
+input-linux-sys = "0.9"
+nix = { version = "0.29", features = ["event", "signal", "inotify"] }
 privdrop = "0.5.3"
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
