@@ -461,7 +461,7 @@ fn real_main(drm: &mut DrmBackend) {
             needs_complete_redraw = false;
         }
 
-        match epoll.wait(&mut [EpollEvent::new(EpollFlags::EPOLLIN, 0)], next_timeout_ms as isize) {
+        match epoll.wait(&mut [EpollEvent::new(EpollFlags::EPOLLIN, 0)], next_timeout_ms as u16) {
             Err(Errno::EINTR) | Ok(_) => { 0 },
             e => e.unwrap(),
         };
