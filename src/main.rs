@@ -4,7 +4,7 @@ use std::{
         fd::{AsRawFd, AsFd},
         unix::{io::OwnedFd, fs::OpenOptionsExt}
     },
-    path::Path,
+    path::{Path, PathBuf},
     collections::HashMap,
     cmp::min,
     panic::{self, AssertUnwindSafe}
@@ -12,7 +12,7 @@ use std::{
 use cairo::{ImageSurface, Format, Context, Surface, Rectangle, Antialias};
 use rsvg::{Loader, CairoRenderer, SvgHandle};
 use drm::control::ClipRect;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use input::{
     Libinput, LibinputInterface, Device as InputDevice,
     event::{
@@ -32,6 +32,7 @@ use nix::{
     errno::Errno
 };
 use privdrop::PrivDrop;
+use freedesktop_icons::lookup;
 
 mod backlight;
 mod display;
@@ -64,17 +65,13 @@ struct Button {
     action: Key,
 }
 
-fn try_load_svg(path: &str) -> Result<ButtonImage> {
-    let handle = Loader::new().read_path(format!("/etc/tiny-dfr/{}.svg", path)).or_else(|_| {
-        Loader::new().read_path(format!("/usr/share/tiny-dfr/{}.svg", path))
-    })?;
+fn try_load_svg(path: impl AsRef<Path>) -> Result<ButtonImage> {
+    let handle = Loader::new().read_path(path)?;
     Ok(ButtonImage::Svg(handle))
 }
 
-fn try_load_png(path: &str) -> Result<ButtonImage> {
-    let mut file = File::open(format!("/etc/tiny-dfr/{}.png", path)).or_else(|_| {
-        File::open(format!("/usr/share/tiny-dfr/{}.png", path))
-    })?;
+fn try_load_png(path: impl AsRef<Path>) -> Result<ButtonImage> {
+    let mut file = File::open(path)?;
     let surf = ImageSurface::create_from_png(&mut file)?;
     if surf.height() == ICON_SIZE && surf.width() == ICON_SIZE {
         return Ok(ButtonImage::Bitmap(surf));
@@ -88,12 +85,60 @@ fn try_load_png(path: &str) -> Result<ButtonImage> {
     return Ok(ButtonImage::Bitmap(resized));
 }
 
+fn try_load_image(name: impl AsRef<str>, theme: Option<impl AsRef<str>>) -> Result<ButtonImage> {
+    let name = name.as_ref();
+    let locations;
+
+    // Load list of candidate locations
+    if let Some(theme) = theme {
+        // Freedesktop icons
+        let theme = theme.as_ref();
+        let candidates = vec![
+            lookup(name).with_cache().with_theme(theme).force_svg().find(),
+            lookup(name).with_cache().with_theme(theme).with_size(ICON_SIZE as u16).find(),
+            lookup(name).with_cache().with_theme(theme).find(),
+        ];
+
+        // .flatten() removes `None` and unwraps `Some` values
+        locations = candidates.into_iter().flatten().collect();
+    } else {
+        // Standard file icons
+        locations = vec![
+            PathBuf::from(format!("/etc/tiny-dfr/{name}.svg")),
+            PathBuf::from(format!("/etc/tiny-dfr/{name}.png")),
+            PathBuf::from(format!("/usr/share/tiny-dfr/{name}.svg")),
+            PathBuf::from(format!("/usr/share/tiny-dfr/{name}.png")),
+        ];
+    };
+
+    // Try to load each candidate
+    let mut last_err = anyhow!("no suitable icon path was found"); // in case locations is empty
+
+    for location in locations {
+        let result = match location.extension().and_then(|s| s.to_str()) {
+            Some("png") => try_load_png(&location),
+            Some("svg") => try_load_svg(&location),
+            _ => Err(anyhow!("invalid file extension")),
+        };
+
+        match result {
+            Ok(image) => return Ok(image),
+            Err(err) => {
+                last_err = err.context(format!("while loading path {}", location.display()));
+            }
+        };
+    }
+
+    // if function hasn't returned by now, all sources have been exhausted
+    Err(last_err.context(format!("failed loading all possible paths for icon {name}")))
+}
+
 impl Button {
     fn with_config(cfg: ButtonConfig) -> Button {
         if let Some(text) = cfg.text {
             Button::new_text(text, cfg.action)
         } else if let Some(icon) = cfg.icon {
-            Button::new_icon(&icon, cfg.action)
+            Button::new_icon(&icon, cfg.theme, cfg.action)
         } else {
             panic!("Invalid config, a button must have either Text or Icon")
         }
@@ -106,8 +151,8 @@ impl Button {
             image: ButtonImage::Text(text),
         }
     }
-    fn new_icon(path: &str, action: Key) -> Button {
-        let image = try_load_svg(path).or_else(|_| try_load_png(path)).unwrap();
+    fn new_icon(path: impl AsRef<str>, theme: Option<impl AsRef<str>>, action: Key) -> Button {
+        let image = try_load_image(path, theme).expect("failed to load icon");
         Button {
             action, image,
             active: false,

@@ -43,6 +43,7 @@ pub struct ButtonConfig {
     #[serde(alias = "Svg")]
     pub icon: Option<String>,
     pub text: Option<String>,
+    pub theme: Option<String>,
     pub action: Key,
     pub stretch: Option<usize>,
 }
@@ -80,7 +81,7 @@ fn load_config(width: u16) -> (Config, [FunctionLayer; 2]) {
     let mut primary_layer_keys = base.primary_layer_keys.unwrap();
     if width >= 2170 {
         for layer in [&mut media_layer_keys, &mut primary_layer_keys] {
-            layer.insert(0, ButtonConfig { icon: None, text: Some("esc".into()), action: Key::Esc, stretch: None });
+            layer.insert(0, ButtonConfig { icon: None, text: Some("esc".into()), theme: None, action: Key::Esc, stretch: None });
         }
     }
     let media_layer = FunctionLayer::with_config(media_layer_keys);
