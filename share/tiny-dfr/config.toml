@@ -47,12 +47,14 @@ PrimaryLayerKeys = [
     # Action defines the key code to send when the button is pressed
     # Text defines the button label
     # Icon specifies the icon to be used for the button.
+    # Theme specifies the XDG icons theme.
     # Stretch specifies how many button spaces the button should take up
     # and defaults to 1
     # Icons can either be svgs or pngs, with svgs being preferred
     # For best results with pngs, they should be 48x48
     # Do not include the extension in the file name.
-    # Icons are looked up in /etc/tiny-dfr first and then in /usr/share/tiny-dfr
+    # If a Theme is set, icons are looked up in XDG_DATA_DIRS.
+    # Otherwise, they are first looked up in /etc/tiny-dfr, and then in /usr/share/tiny-dfr.
     # Only one of Text or Icon is allowed,
     # if both are present, the behavior is undefined.
     # For the list of supported key codes see
@@ -71,6 +73,7 @@ PrimaryLayerKeys = [
     { Text = "F10", Action = "F10" },
     { Text = "F11", Action = "F11" },
     { Text = "F12", Action = "F12" }
+
     # Example with Stretch:
     # # because most buttons have stretch 2, they behave as if they all had 1:
     # { Text = "F1",  Action = "F1", Stretch = 2  },
@@ -103,4 +106,18 @@ MediaLayerKeys = [
     { Icon = "volume_off",      Action = "Mute"           },
     { Icon = "volume_down",     Action = "VolumeDown"     },
     { Icon = "volume_up",       Action = "VolumeUp"       }
+
+    # Example with XDG icons (requires `breeze-dark` theme installed):
+    # { Icon = "brightness-low",        Theme = "breeze-dark", Action = "BrightnessDown" },
+    # { Icon = "brightness-high",       Theme = "breeze-dark", Action = "BrightnessUp"   },
+    # { Icon = "microphone",            Theme = "breeze-dark", Action = "MicMute"        },
+    # { Icon = "search",                Theme = "breeze-dark", Action = "Search"         },
+    # { Icon = "redshift-status-day",   Theme = "breeze-dark", Action = "IllumDown"      },
+    # { Icon = "redshift-status-night", Theme = "breeze-dark", Action = "IllumUp"        },
+    # { Icon = "media-skip-backward",   Theme = "breeze-dark", Action = "PreviousSong"   },
+    # { Icon = "media-playback-start",  Theme = "breeze-dark", Action = "PlayPause"      },
+    # { Icon = "media-skip-forward",    Theme = "breeze-dark", Action = "NextSong"       },
+    # { Icon = "audio-volume-muted",    Theme = "breeze-dark", Action = "Mute"           },
+    # { Icon = "audio-volume-low",      Theme = "breeze-dark", Action = "VolumeDown"     },
+    # { Icon = "audio-volume-high",     Theme = "breeze-dark", Action = "VolumeUp"       }
 ]
