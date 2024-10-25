@@ -108,16 +108,16 @@ MediaLayerKeys = [
     { Icon = "volume_up",       Action = "VolumeUp"       }
 
     # Example with XDG icons (requires `breeze-dark` theme installed):
-    # { Icon = "brightness-low",        Theme = "breeze-dark", Action = "BrightnessDown" },
-    # { Icon = "brightness-high",       Theme = "breeze-dark", Action = "BrightnessUp"   },
-    # { Icon = "microphone",            Theme = "breeze-dark", Action = "MicMute"        },
-    # { Icon = "search",                Theme = "breeze-dark", Action = "Search"         },
-    # { Icon = "redshift-status-day",   Theme = "breeze-dark", Action = "IllumDown"      },
-    # { Icon = "redshift-status-night", Theme = "breeze-dark", Action = "IllumUp"        },
-    # { Icon = "media-skip-backward",   Theme = "breeze-dark", Action = "PreviousSong"   },
-    # { Icon = "media-playback-start",  Theme = "breeze-dark", Action = "PlayPause"      },
-    # { Icon = "media-skip-forward",    Theme = "breeze-dark", Action = "NextSong"       },
-    # { Icon = "audio-volume-muted",    Theme = "breeze-dark", Action = "Mute"           },
-    # { Icon = "audio-volume-low",      Theme = "breeze-dark", Action = "VolumeDown"     },
-    # { Icon = "audio-volume-high",     Theme = "breeze-dark", Action = "VolumeUp"       }
+    # { Icon = "brightness-low",       Theme = "breeze-dark", Action = "BrightnessDown" },
+    # { Icon = "brightness-high",      Theme = "breeze-dark", Action = "BrightnessUp"   },
+    # { Icon = "microphone",           Theme = "breeze-dark", Action = "MicMute"        },
+    # { Icon = "search",               Theme = "breeze-dark", Action = "Search"         },
+    # { Icon = "redshift-status-day",  Theme = "breeze-dark", Action = "IllumDown"      },
+    # { Icon = "redshift-status-on",   Theme = "breeze-dark", Action = "IllumUp"        },
+    # { Icon = "media-skip-backward",  Theme = "breeze-dark", Action = "PreviousSong"   },
+    # { Icon = "media-playback-start", Theme = "breeze-dark", Action = "PlayPause"      },
+    # { Icon = "media-skip-forward",   Theme = "breeze-dark", Action = "NextSong"       },
+    # { Icon = "audio-volume-muted",   Theme = "breeze-dark", Action = "Mute"           },
+    # { Icon = "audio-volume-low",     Theme = "breeze-dark", Action = "VolumeDown"     },
+    # { Icon = "audio-volume-high",    Theme = "breeze-dark", Action = "VolumeUp"       }
 ]
