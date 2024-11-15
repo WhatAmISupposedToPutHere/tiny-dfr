@@ -338,6 +338,9 @@ impl FunctionLayer {
             let virtual_i = (x / (width as f64 / self.virtual_button_count as f64)) as usize;
             self.buttons.iter().position(|(start, _)| *start > virtual_i).unwrap_or(self.buttons.len()) - 1
         });
+        if i >= self.buttons.len() {
+            return None;
+        }
         
         let start = self.buttons[i].0;
         let end = if i + 1 < self.buttons.len() {
