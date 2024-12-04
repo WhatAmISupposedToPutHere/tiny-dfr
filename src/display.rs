@@ -23,12 +23,12 @@ impl ControlDevice for Card {}
 impl DrmDevice for Card {}
 
 impl Card {
-    fn open(path: &Path) -> Self {
+    fn open(path: &Path) -> Result<Self> {
         let mut options = OpenOptions::new();
         options.read(true);
         options.write(true);
 
-        Card(options.open(path).unwrap())
+        Ok(Card(options.open(path)?))
     }
 }
 
@@ -63,7 +63,7 @@ fn find_prop_id<T: ResourceHandle>(
 }
 
 fn try_open_card(path: &Path) -> Result<DrmBackend> {
-    let card = Card::open(path);
+    let card = Card::open(path)?;
     card.set_client_capability(ClientCapability::UniversalPlanes, true)?;
     card.set_client_capability(ClientCapability::Atomic, true)?;
     card.acquire_master_lock()?;
